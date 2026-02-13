@@ -1,7 +1,7 @@
 .PHONY: check-structure \
 	data-platform-up data-platform-down data-platform-migrate data-platform-seed data-platform-status \
 	streaming-enqueue streaming-dispatch \
-	module4-check module5-check module6-check module7-check module8-check module9-check module10-check \
+	module4-check module5-check module6-check module7-check module8-check module9-check module10-check module11-check \
 	ai-step2 ai-step3 ai-step3-test ai-check
 
 check-structure:
@@ -70,3 +70,7 @@ module9-check:
 module10-check:
 	$(PYTHON) -m pytest -q services/report-generation-service/tests/test_report_generation_service.py
 	$(PYTHON) -m pytest -q tests/contract/test_report_generation_contracts.py
+
+module11-check:
+	$(PYTHON) -m pytest -q apps/notification-service/tests/test_notification_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_notification_contracts.py

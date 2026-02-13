@@ -21,6 +21,7 @@ This folder is the integration source of truth for InfraGuard.
 - `events/inspection.requested.schema.json`
 - `events/maintenance.completed.schema.json`
 - `events/report.generated.schema.json`
+- `events/notification.delivery.status.schema.json`
 - `events/maintenance.verified.blockchain.schema.json`
 
 ## Command Contracts
