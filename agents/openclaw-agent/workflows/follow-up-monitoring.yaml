@@ -1,6 +1,16 @@
 name: follow-up-monitoring
+version: v1
 trigger_event: inspection.requested
+
+schedule:
+  interval_minutes: 30
+  max_cycles: 24
+
 steps:
   - action: monitor_asset_every_30m
   - action: recalculate_health_score
   - action: escalate_if_deteriorating
+
+outputs:
+  events:
+    - asset.risk.computed

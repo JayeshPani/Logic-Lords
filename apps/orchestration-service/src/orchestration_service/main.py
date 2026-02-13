@@ -1,4 +1,4 @@
-"""FastAPI app for health score service."""
+"""FastAPI app for orchestration service."""
 
 from fastapi import FastAPI
 

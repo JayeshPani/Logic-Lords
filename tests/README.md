@@ -54,3 +54,23 @@ python3 -m pytest -q tests/contract/test_anomaly_detection_contracts.py
 # Combined service + contract validation:
 make module7-check
 ```
+
+## Module-8 Contract Checks
+
+```bash
+python3 -m pytest -q services/health-score-service/tests/test_health_score_service.py
+python3 -m pytest -q tests/contract/test_health_score_contracts.py
+
+# Combined service + contract validation:
+make module8-check
+```
+
+## Module-9 Contract Checks
+
+```bash
+python3 -m pytest -q apps/orchestration-service/tests/test_orchestration_service.py
+python3 -m pytest -q tests/contract/test_orchestration_contracts.py
+
+# Combined service + contract validation:
+make module9-check
+```
