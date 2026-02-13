@@ -47,3 +47,4 @@ AI-based urban infrastructure health monitoring platform with autonomous orchest
 15. Validate Module-7 anomaly service contracts and observability using `make module7-check`.
 16. Validate Module-8 health-score service contracts and observability using `make module8-check`.
 17. Validate Module-9 orchestration service contracts and workflow automation using `make module9-check`.
+18. Validate Module-10 report-generation contracts and evidence outputs using `make module10-check`.

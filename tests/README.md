@@ -74,3 +74,13 @@ python3 -m pytest -q tests/contract/test_orchestration_contracts.py
 # Combined service + contract validation:
 make module9-check
 ```
+
+## Module-10 Contract Checks
+
+```bash
+python3 -m pytest -q services/report-generation-service/tests/test_report_generation_service.py
+python3 -m pytest -q tests/contract/test_report_generation_contracts.py
+
+# Combined service + contract validation:
+make module10-check
+```
