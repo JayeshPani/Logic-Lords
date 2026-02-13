@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "health.score.response",
+  "type": "object",
+  "required": [
+    "health_score",
+    "failure_probability_72h",
+    "anomaly_flag",
+    "risk_level",
+    "timestamp"
+  ],
+  "properties": {
+    "health_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "failure_probability_72h": {"type": "number", "minimum": 0, "maximum": 1},
+    "anomaly_flag": {"type": "integer", "enum": [0, 1]},
+    "risk_level": {"type": "string", "enum": ["Very Low", "Low", "Moderate", "High", "Critical"]},
+    "timestamp": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

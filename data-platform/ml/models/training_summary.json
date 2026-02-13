@@ -1,0 +1,15 @@
+{
+  "lstm": {
+    "model": "data-platform/ml/models/lstm_failure_predictor.pt",
+    "meta": "data-platform/ml/models/lstm_failure_predictor.meta.json",
+    "best_val_loss": 0.0011434718267992138,
+    "test_loss": 0.0008650736650452018,
+    "epochs": 4
+  },
+  "isolation_forest": {
+    "model": "data-platform/ml/models/isolation_forest.joblib",
+    "meta": "data-platform/ml/models/isolation_forest.meta.json",
+    "rows_total": 45524,
+    "contamination": 0.02
+  }
+}

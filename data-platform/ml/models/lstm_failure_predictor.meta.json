@@ -1,0 +1,40 @@
+{
+  "dataset": "data-platform/ml/datasets/bridge_digital_twin_dataset.csv",
+  "rows_total": 4320,
+  "train_rows": 3024,
+  "val_rows": 648,
+  "test_rows": 648,
+  "sequence_length": 288,
+  "horizon_steps": 432,
+  "num_train_sequences": 2520,
+  "num_val_sequences": 540,
+  "num_test_sequences": 541,
+  "epochs": 4,
+  "batch_size": 128,
+  "learning_rate": 0.001,
+  "best_val_loss": 0.0011434718267992138,
+  "test_loss": 0.0008650736650452018,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.22952576726675034,
+      "val_loss": 0.20909532010555268
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.14427547603845597,
+      "val_loss": 0.06937707364559173
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.027324006287381054,
+      "val_loss": 0.005428445991128683
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.0023427219595760105,
+      "val_loss": 0.0011434718267992138
+    }
+  ],
+  "model_out": "data-platform/ml/models/lstm_failure_predictor.pt"
+}

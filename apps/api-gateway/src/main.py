@@ -1,0 +1,1 @@
+"""API gateway entrypoint placeholder."""

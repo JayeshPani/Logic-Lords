@@ -1,0 +1,6 @@
+name: follow-up-monitoring
+trigger_event: inspection.requested
+steps:
+  - action: monitor_asset_every_30m
+  - action: recalculate_health_score
+  - action: escalate_if_deteriorating

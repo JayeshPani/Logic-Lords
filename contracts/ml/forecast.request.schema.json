@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "forecast.request",
+  "type": "object",
+  "required": ["asset_id", "history"],
+  "properties": {
+    "asset_id": {"type": "string", "minLength": 1},
+    "horizon_hours": {"type": "integer", "minimum": 1, "maximum": 168},
+    "history": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "strain_value",
+          "vibration_rms",
+          "temperature",
+          "humidity",
+          "timestamp"
+        ],
+        "properties": {
+          "strain_value": {"type": "number"},
+          "vibration_rms": {"type": "number"},
+          "temperature": {"type": "number"},
+          "humidity": {"type": "number", "minimum": 0, "maximum": 100},
+          "traffic_density": {"type": "number"},
+          "rainfall_intensity": {"type": "number"},
+          "timestamp": {"type": "string", "format": "date-time"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

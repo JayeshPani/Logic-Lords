@@ -1,0 +1,722 @@
+openapi: 3.1.0
+info:
+  title: InfraGuard API
+  version: 1.0.0
+  description: Contract-first API for infrastructure monitoring, risk analytics, and blockchain verification.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+security:
+  - BearerAuth: []
+tags:
+  - name: System
+  - name: Assets
+  - name: Risk
+  - name: Forecast
+  - name: Verification
+paths:
+  /health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Service health check
+      description: Returns API health and downstream dependency status.
+      security: []
+      responses:
+        '200':
+          description: API is healthy or degraded but reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /assets:
+    get:
+      tags: [Assets]
+      operationId: listAssets
+      summary: List monitored assets
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - $ref: '#/components/parameters/ZoneParam'
+        - $ref: '#/components/parameters/AssetTypeParam'
+        - $ref: '#/components/parameters/AssetStatusParam'
+      responses:
+        '200':
+          description: Paginated asset list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags: [Assets]
+      operationId: createAsset
+      summary: Register a new infrastructure asset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssetRequest'
+      responses:
+        '201':
+          description: Asset created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /assets/{asset_id}:
+    get:
+      tags: [Assets]
+      operationId: getAssetById
+      summary: Get one asset
+      parameters:
+        - $ref: '#/components/parameters/AssetIdParam'
+      responses:
+        '200':
+          description: Asset details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /assets/{asset_id}/health:
+    get:
+      tags: [Risk]
+      operationId: getAssetHealth
+      summary: Latest health score for an asset
+      parameters:
+        - $ref: '#/components/parameters/AssetIdParam'
+      responses:
+        '200':
+          description: Latest health snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetHealthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /assets/{asset_id}/forecast:
+    get:
+      tags: [Forecast]
+      operationId: getAssetFailureForecast
+      summary: Failure forecast for an asset
+      parameters:
+        - $ref: '#/components/parameters/AssetIdParam'
+        - $ref: '#/components/parameters/HorizonHoursParam'
+      responses:
+        '200':
+          description: Forecast snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetForecastResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /maintenance/{maintenance_id}/verification:
+    get:
+      tags: [Verification]
+      operationId: getMaintenanceVerification
+      summary: Blockchain verification details for maintenance
+      parameters:
+        - $ref: '#/components/parameters/MaintenanceIdParam'
+      responses:
+        '200':
+          description: Verification record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceVerificationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    AssetIdParam:
+      name: asset_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        example: asset_w12_bridge_0042
+    MaintenanceIdParam:
+      name: maintenance_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^mnt_[0-9]{8}_[0-9]+$'
+        example: mnt_20260213_0012
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 20
+    ZoneParam:
+      name: zone
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    AssetTypeParam:
+      name: asset_type
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/AssetType'
+    AssetStatusParam:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/AssetStatus'
+    HorizonHoursParam:
+      name: horizon_hours
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 168
+        default: 72
+
+  responses:
+    BadRequest:
+      description: Invalid request payload or parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: BAD_REQUEST
+              message: Invalid input.
+              trace_id: trc_7bca1ac3
+    Unauthorized:
+      description: Authentication required or token invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Missing or invalid authentication token.
+              trace_id: trc_7bca1ac3
+    Forbidden:
+      description: Caller is authenticated but lacks required permissions.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: FORBIDDEN
+              message: Access denied.
+              trace_id: trc_7bca1ac3
+    NotFound:
+      description: Requested entity was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: NOT_FOUND
+              message: Resource not found.
+              trace_id: trc_7bca1ac3
+    Conflict:
+      description: Resource conflict (for example duplicate identifier).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: CONFLICT
+              message: Asset already exists.
+              trace_id: trc_7bca1ac3
+    UnprocessableEntity:
+      description: Semantic validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Validation failed.
+              trace_id: trc_7bca1ac3
+    InternalServerError:
+      description: Unexpected server failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INTERNAL_SERVER_ERROR
+              message: Unexpected error.
+              trace_id: trc_7bca1ac3
+
+  schemas:
+    ApiMeta:
+      type: object
+      required: [request_id, timestamp]
+      properties:
+        request_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+          example: req_01JCSB5Y0M5EC5PM03B59XK3P3
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorDetail:
+      type: object
+      required: [field, issue]
+      properties:
+        field:
+          type: string
+        issue:
+          type: string
+
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        trace_id:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+
+    DependencyHealth:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+        latency_ms:
+          type: integer
+          minimum: 0
+
+    HealthCheckResponse:
+      type: object
+      required: [status, service, version, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        service:
+          type: string
+          example: api-gateway
+        version:
+          type: string
+          example: 1.0.0
+        timestamp:
+          type: string
+          format: date-time
+        dependencies:
+          type: object
+          properties:
+            database:
+              $ref: '#/components/schemas/DependencyHealth'
+            event_stream:
+              $ref: '#/components/schemas/DependencyHealth'
+            blockchain_verifier:
+              $ref: '#/components/schemas/DependencyHealth'
+
+    AssetType:
+      type: string
+      enum: [bridge, road, tunnel, flyover, other]
+
+    AssetStatus:
+      type: string
+      enum: [active, maintenance, retired]
+
+    Severity:
+      type: string
+      enum: [healthy, watch, warning, critical]
+
+    RiskLevel:
+      type: string
+      enum: [Very Low, Low, Moderate, High, Critical]
+
+    GeoPoint:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    Asset:
+      type: object
+      required:
+        - asset_id
+        - name
+        - asset_type
+        - status
+        - zone
+        - location
+        - created_at
+        - updated_at
+      properties:
+        asset_id:
+          type: string
+          pattern: '^asset_[a-z0-9]+_[a-z0-9]+_[0-9]+$'
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        asset_type:
+          $ref: '#/components/schemas/AssetType'
+        status:
+          $ref: '#/components/schemas/AssetStatus'
+        zone:
+          type: string
+          minLength: 1
+          maxLength: 64
+        location:
+          $ref: '#/components/schemas/GeoPoint'
+        metadata:
+          type: object
+          additionalProperties: true
+        installed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateAssetRequest:
+      type: object
+      required: [asset_id, name, asset_type, zone, location]
+      properties:
+        asset_id:
+          type: string
+          pattern: '^asset_[a-z0-9]+_[a-z0-9]+_[0-9]+$'
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        asset_type:
+          $ref: '#/components/schemas/AssetType'
+        zone:
+          type: string
+          minLength: 1
+          maxLength: 64
+        location:
+          $ref: '#/components/schemas/GeoPoint'
+        metadata:
+          type: object
+          additionalProperties: true
+        installed_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    Pagination:
+      type: object
+      required: [page, page_size, total_items, total_pages]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        page_size:
+          type: integer
+          minimum: 1
+        total_items:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+
+    AssetResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/Asset'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    AssetListResponse:
+      type: object
+      required: [data, pagination, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Asset'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    RiskComponents:
+      type: object
+      required: [mechanical_stress, thermal_stress, fatigue, environmental_exposure]
+      properties:
+        mechanical_stress:
+          type: number
+          minimum: 0
+          maximum: 1
+        thermal_stress:
+          type: number
+          minimum: 0
+          maximum: 1
+        fatigue:
+          type: number
+          minimum: 0
+          maximum: 1
+        environmental_exposure:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    AssetHealth:
+      type: object
+      required: [asset_id, evaluated_at, health_score, risk_level, failure_probability_72h, anomaly_flag]
+      properties:
+        asset_id:
+          type: string
+        evaluated_at:
+          type: string
+          format: date-time
+        health_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        risk_level:
+          $ref: '#/components/schemas/RiskLevel'
+        failure_probability_72h:
+          type: number
+          minimum: 0
+          maximum: 1
+        anomaly_flag:
+          type: integer
+          enum: [0, 1]
+        severity:
+          $ref: '#/components/schemas/Severity'
+        components:
+          $ref: '#/components/schemas/RiskComponents'
+        model_versions:
+          type: object
+          properties:
+            fuzzy:
+              type: string
+              example: v1
+            fusion:
+              type: string
+              example: v1
+
+    AssetHealthResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AssetHealth'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    AssetForecast:
+      type: object
+      required:
+        - asset_id
+        - generated_at
+        - horizon_hours
+        - failure_probability_72h
+        - confidence
+      properties:
+        asset_id:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        horizon_hours:
+          type: integer
+          minimum: 1
+          maximum: 168
+        failure_probability_72h:
+          type: number
+          minimum: 0
+          maximum: 1
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        model:
+          type: object
+          properties:
+            name:
+              type: string
+              example: lstm_failure_forecast
+            version:
+              type: string
+              example: v1
+
+    AssetForecastResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AssetForecast'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    VerificationStatus:
+      type: string
+      enum: [pending, submitted, confirmed, failed]
+
+    MaintenanceVerification:
+      type: object
+      required:
+        - maintenance_id
+        - asset_id
+        - verification_status
+        - evidence_hash
+        - network
+        - contract_address
+      properties:
+        maintenance_id:
+          type: string
+          pattern: '^mnt_[0-9]{8}_[0-9]+$'
+        asset_id:
+          type: string
+        verification_status:
+          $ref: '#/components/schemas/VerificationStatus'
+        evidence_hash:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{64}$'
+        tx_hash:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{64}$'
+        network:
+          type: string
+        contract_address:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{40}$'
+        chain_id:
+          type: integer
+          minimum: 1
+        block_number:
+          type: integer
+          minimum: 0
+        verified_at:
+          type: string
+          format: date-time
+
+    MaintenanceVerificationResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/MaintenanceVerification'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sensor.reading.ingested",
+  "allOf": [
+    {
+      "$ref": "../core/event-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "sensor.reading.ingested"
+        },
+        "data": {
+          "type": "object",
+          "required": ["asset_id", "sensor_id", "captured_at", "ingested_at", "metrics"],
+          "properties": {
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sensor_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "captured_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "ingested_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "metrics": {
+              "type": "object",
+              "required": ["strain", "vibration", "temperature", "humidity", "tilt"],
+              "properties": {
+                "strain": {
+                  "type": "number"
+                },
+                "vibration": {
+                  "type": "number"
+                },
+                "temperature": {
+                  "type": "number"
+                },
+                "humidity": {
+                  "type": "number"
+                },
+                "tilt": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["event_type", "data"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

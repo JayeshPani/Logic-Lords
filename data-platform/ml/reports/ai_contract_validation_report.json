@@ -1,0 +1,167 @@
+{
+  "generated_at": "2026-02-13T18:11:59.730268+00:00",
+  "summary": {
+    "cases_total": 3,
+    "checks_per_case": 7,
+    "invalid_count": 0,
+    "all_valid": true,
+    "datasets": [
+      "/Users/jayeshpani/Cental Hack/data-platform/ml/datasets/bridge_digital_twin_dataset.csv",
+      "/Users/jayeshpani/Cental Hack/data-platform/ml/datasets/bridge_dataset.csv",
+      "/Users/jayeshpani/Cental Hack/data-platform/ml/datasets/merged_dataset_BearingTest_2.csv"
+    ]
+  },
+  "invalid": [],
+  "cases": [
+    {
+      "dataset_path": "/Users/jayeshpani/Cental Hack/data-platform/ml/datasets/bridge_digital_twin_dataset.csv",
+      "dataset_kind": "digital_twin",
+      "rows_loaded": 500,
+      "asset_id": "asset_contract_digital_twin_1",
+      "validations": [
+        {
+          "schema": "forecast.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "anomaly.detect.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "fuzzy.infer.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "health.score.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.failure.predicted.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.anomaly.detected.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.risk.computed.schema.json",
+          "valid": true,
+          "error": null
+        }
+      ],
+      "sample_outputs": {
+        "forecast_mode": "torch",
+        "failure_probability_72h": 0.0602,
+        "anomaly_score": 0.3963,
+        "health_score": 0.6828,
+        "risk_level": "High"
+      }
+    },
+    {
+      "dataset_path": "/Users/jayeshpani/Cental Hack/data-platform/ml/datasets/bridge_dataset.csv",
+      "dataset_kind": "bridge",
+      "rows_loaded": 500,
+      "asset_id": "asset_contract_bridge_2",
+      "validations": [
+        {
+          "schema": "forecast.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "anomaly.detect.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "fuzzy.infer.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "health.score.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.failure.predicted.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.anomaly.detected.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.risk.computed.schema.json",
+          "valid": true,
+          "error": null
+        }
+      ],
+      "sample_outputs": {
+        "forecast_mode": "torch",
+        "failure_probability_72h": 0.0602,
+        "anomaly_score": 0.4723,
+        "health_score": 0.3493,
+        "risk_level": "Low"
+      }
+    },
+    {
+      "dataset_path": "/Users/jayeshpani/Cental Hack/data-platform/ml/datasets/merged_dataset_BearingTest_2.csv",
+      "dataset_kind": "bearing",
+      "rows_loaded": 500,
+      "asset_id": "asset_contract_bearing_3",
+      "validations": [
+        {
+          "schema": "forecast.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "anomaly.detect.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "fuzzy.infer.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "health.score.response.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.failure.predicted.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.anomaly.detected.schema.json",
+          "valid": true,
+          "error": null
+        },
+        {
+          "schema": "asset.risk.computed.schema.json",
+          "valid": true,
+          "error": null
+        }
+      ],
+      "sample_outputs": {
+        "forecast_mode": "torch",
+        "failure_probability_72h": 0.0602,
+        "anomaly_score": 0.3561,
+        "health_score": 0.2633,
+        "risk_level": "Low"
+      }
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "asset.failure.predicted",
+  "allOf": [
+    {
+      "$ref": "../core/event-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "asset.failure.predicted"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "asset_id",
+            "generated_at",
+            "horizon_hours",
+            "failure_probability_72h",
+            "confidence"
+          ],
+          "properties": {
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "generated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "horizon_hours": {
+              "type": "integer",
+              "const": 72
+            },
+            "failure_probability_72h": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["event_type", "data"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

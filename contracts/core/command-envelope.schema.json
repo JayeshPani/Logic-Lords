@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://infraguard/contracts/core/command-envelope.schema.json",
+  "title": "InfraGuard Command Envelope",
+  "type": "object",
+  "required": [
+    "command_id",
+    "command_type",
+    "command_version",
+    "requested_at",
+    "requested_by",
+    "trace_id",
+    "payload"
+  ],
+  "properties": {
+    "command_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "command_type": {
+      "type": "string",
+      "pattern": "^[a-z]+(?:\\.[a-z0-9_]+)+$"
+    },
+    "command_version": {
+      "type": "string",
+      "pattern": "^v[0-9]+$"
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "requested_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "payload": {
+      "type": "object"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "boolean", "null"]
+      }
+    }
+  },
+  "additionalProperties": false
+}

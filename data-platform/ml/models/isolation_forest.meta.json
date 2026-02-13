@@ -1,0 +1,32 @@
+{
+  "datasets": [
+    {
+      "dataset": "data-platform/ml/datasets/bridge_dataset.csv",
+      "kind": "bridge",
+      "rows_loaded": 1340
+    },
+    {
+      "dataset": "data-platform/ml/datasets/bridge_digital_twin_dataset.csv",
+      "kind": "digital_twin",
+      "rows_loaded": 43200
+    },
+    {
+      "dataset": "data-platform/ml/datasets/merged_dataset_BearingTest_2.csv",
+      "kind": "bearing",
+      "rows_loaded": 984
+    }
+  ],
+  "rows_total": 45524,
+  "feature_order": [
+    "strain",
+    "vibration",
+    "temperature",
+    "humidity"
+  ],
+  "n_estimators": 100,
+  "contamination": 0.02,
+  "random_state": 42,
+  "decision_min": -0.16637302184295866,
+  "decision_max": 0.20324544983623666,
+  "model_out": "data-platform/ml/models/isolation_forest.joblib"
+}

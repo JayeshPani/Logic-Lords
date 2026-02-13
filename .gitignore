@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Env
+.env
+.env.*
+
+# Logs
+*.log
+
+# Build artifacts
+coverage/
+.tmp/
+
+# InfraGuard datasets (do not push raw datasets)
+archive (3)/
+data-platform/ml/datasets/**
+!data-platform/ml/datasets/README.md
+!data-platform/ml/datasets/.gitkeep

@@ -1,0 +1,11 @@
+{
+  "asset_id": "asset_bridge_zonea_1",
+  "sensor_id": "sensor_bridge_zonea_1",
+  "captured_at": "2026-02-13T10:15:00Z",
+  "strain": 540.3,
+  "vibration": 1.27,
+  "temperature": 30.8,
+  "humidity": 69.4,
+  "tilt": 0.031,
+  "trace_id": "example-trace-001"
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "inspection.create.command",
+  "allOf": [
+    {
+      "$ref": "../core/command-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "command_type": {
+          "const": "inspection.create"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["asset_id", "priority", "reason", "triggered_by_event_id"],
+          "properties": {
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "priority": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "critical"]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 500
+            },
+            "triggered_by_event_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "health_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "failure_probability": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["command_type", "payload"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

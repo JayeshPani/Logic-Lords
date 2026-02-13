@@ -1,0 +1,1 @@
+"""Notification service entrypoint placeholder."""

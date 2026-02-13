@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-02-13T18:11:57.567727+00:00",
+  "lstm": {
+    "report_out": "data-platform/ml/reports/lstm_backtest_report.json",
+    "split_strategy_applied": "event_aware",
+    "split_strategy_fallback_reason": null,
+    "test_rmse": 0.031279002827510664,
+    "test_mae": 0.028138088062405586,
+    "test_r2": -3.3203916978692245,
+    "test_high_risk_f1": 0.0,
+    "proxy_event_f1_at_recommended_threshold": 0.0016736401673640169,
+    "proxy_event_positive_rate_eval_split": 0.0008375209380234506,
+    "proxy_event_positive_rate_calibration_split": 0.009164121077478478,
+    "proxy_event_recommended_threshold": 0.05,
+    "proxy_event_recommended_f1": 0.018161805173362685
+  },
+  "isolation_forest": {
+    "report_out": "data-platform/ml/reports/isolation_forest_evaluation_report.json",
+    "rows_scored_total": 45524,
+    "flagged_rate_total": 0.010346191020121255,
+    "proxy_f1_total": 0.4472295514511873,
+    "proxy_recommended_threshold_total": 0.55,
+    "proxy_recommended_f1_total": 0.48593350383631717
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "anomaly.detect.response",
+  "type": "object",
+  "required": ["data"],
+  "properties": {
+    "data": {
+      "type": "object",
+      "required": [
+        "asset_id",
+        "anomaly_score",
+        "anomaly_flag",
+        "threshold",
+        "detector_mode",
+        "evaluated_at"
+      ],
+      "properties": {
+        "asset_id": {"type": "string"},
+        "anomaly_score": {"type": "number", "minimum": 0, "maximum": 1},
+        "anomaly_flag": {"type": "integer", "enum": [0, 1]},
+        "threshold": {"type": "number", "minimum": 0, "maximum": 1},
+        "detector_mode": {"type": "string", "enum": ["isolation_forest", "heuristic"]},
+        "evaluated_at": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

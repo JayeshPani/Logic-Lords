@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "asset.anomaly.detected",
+  "allOf": [
+    {
+      "$ref": "../core/event-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "asset.anomaly.detected"
+        },
+        "data": {
+          "type": "object",
+          "required": ["asset_id", "evaluated_at", "anomaly_score", "anomaly_flag"],
+          "properties": {
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evaluated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "anomaly_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "anomaly_flag": {
+              "type": "integer",
+              "enum": [0, 1]
+            },
+            "detector_mode": {
+              "type": "string",
+              "enum": ["isolation_forest", "heuristic"]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["event_type", "data"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

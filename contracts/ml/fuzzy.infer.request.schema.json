@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "fuzzy.infer.request",
+  "type": "object",
+  "required": ["asset_id", "inputs"],
+  "properties": {
+    "asset_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "inputs": {
+      "type": "object",
+      "required": [
+        "strain",
+        "vibration",
+        "temperature",
+        "rainfall_intensity",
+        "traffic_density",
+        "failure_probability",
+        "anomaly_score"
+      ],
+      "properties": {
+        "strain": {"type": "number", "minimum": 0, "maximum": 1},
+        "vibration": {"type": "number", "minimum": 0, "maximum": 1},
+        "temperature": {"type": "number", "minimum": 0, "maximum": 1},
+        "rainfall_intensity": {"type": "number", "minimum": 0, "maximum": 1},
+        "traffic_density": {"type": "number", "minimum": 0, "maximum": 1},
+        "failure_probability": {"type": "number", "minimum": 0, "maximum": 1},
+        "anomaly_score": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

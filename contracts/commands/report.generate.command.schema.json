@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "report.generate.command",
+  "allOf": [
+    {
+      "$ref": "../core/command-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "command_type": {
+          "const": "report.generate"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["maintenance_id", "asset_id", "report_type"],
+          "properties": {
+            "maintenance_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "report_type": {
+              "type": "string",
+              "enum": ["inspection", "maintenance_verification"]
+            },
+            "include_sensor_window": {
+              "type": "object",
+              "required": ["from", "to"],
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "to": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["command_type", "payload"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

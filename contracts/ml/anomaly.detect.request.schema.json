@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "anomaly.detect.request",
+  "type": "object",
+  "required": ["asset_id", "current"],
+  "properties": {
+    "asset_id": {"type": "string", "minLength": 1},
+    "current": {
+      "type": "object",
+      "required": ["strain", "vibration", "temperature", "humidity"],
+      "properties": {
+        "strain": {"type": "number", "minimum": 0, "maximum": 1},
+        "vibration": {"type": "number", "minimum": 0, "maximum": 1},
+        "temperature": {"type": "number", "minimum": 0, "maximum": 1},
+        "humidity": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": false
+    },
+    "baseline_window": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["strain", "vibration", "temperature", "humidity"],
+        "properties": {
+          "strain": {"type": "number", "minimum": 0, "maximum": 1},
+          "vibration": {"type": "number", "minimum": 0, "maximum": 1},
+          "temperature": {"type": "number", "minimum": 0, "maximum": 1},
+          "humidity": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

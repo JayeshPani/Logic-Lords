@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "verification.record.blockchain.command",
+  "allOf": [
+    {
+      "$ref": "../core/command-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "command_type": {
+          "const": "verification.record.blockchain"
+        },
+        "payload": {
+          "type": "object",
+          "required": [
+            "maintenance_id",
+            "asset_id",
+            "evidence_hash",
+            "network",
+            "contract_address"
+          ],
+          "properties": {
+            "maintenance_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence_hash": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{64}$"
+            },
+            "network": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 64
+            },
+            "contract_address": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            },
+            "chain_id": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["command_type", "payload"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

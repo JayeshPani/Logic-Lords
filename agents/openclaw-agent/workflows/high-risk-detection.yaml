@@ -1,0 +1,11 @@
+name: high-risk-detection
+trigger_event: asset.risk.computed
+guard:
+  severity_in:
+    - warning
+    - critical
+steps:
+  - action: compile_recent_sensor_window
+  - action: create_inspection_ticket
+  - action: notify_field_team
+  - action: schedule_follow_up_monitoring

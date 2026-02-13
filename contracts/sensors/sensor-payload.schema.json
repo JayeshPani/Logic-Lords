@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sensor.payload.raw",
+  "type": "object",
+  "required": ["device_id", "sent_at", "sequence", "metrics"],
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{3,64}$"
+    },
+    "gateway_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{3,64}$"
+    },
+    "firmware_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "battery_level_pct": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "strain_microstrain",
+        "vibration_rms_ms2",
+        "temperature_c",
+        "humidity_pct",
+        "tilt_deg"
+      ],
+      "properties": {
+        "strain_microstrain": {
+          "type": "number"
+        },
+        "vibration_rms_ms2": {
+          "type": "number"
+        },
+        "temperature_c": {
+          "type": "number"
+        },
+        "humidity_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "tilt_deg": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "location": {
+      "type": "object",
+      "required": ["lat", "lon"],
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "fuzzy.infer.response",
+  "type": "object",
+  "required": ["data"],
+  "properties": {
+    "data": {
+      "type": "object",
+      "required": [
+        "asset_id",
+        "evaluated_at",
+        "final_risk_score",
+        "risk_level",
+        "rule_activations",
+        "method"
+      ],
+      "properties": {
+        "asset_id": {"type": "string"},
+        "evaluated_at": {"type": "string", "format": "date-time"},
+        "final_risk_score": {"type": "number", "minimum": 0, "maximum": 1},
+        "risk_level": {"type": "string", "enum": ["Very Low", "Low", "Moderate", "High", "Critical"]},
+        "method": {"type": "string", "const": "mamdani_centroid"},
+        "rule_activations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "activation", "consequent"],
+            "properties": {
+              "name": {"type": "string"},
+              "activation": {"type": "number", "minimum": 0, "maximum": 1},
+              "consequent": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

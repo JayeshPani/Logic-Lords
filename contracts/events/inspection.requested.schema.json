@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "inspection.requested",
+  "allOf": [
+    {
+      "$ref": "../core/event-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "inspection.requested"
+        },
+        "data": {
+          "type": "object",
+          "required": ["ticket_id", "asset_id", "requested_at", "priority", "reason"],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requested_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "priority": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "critical"]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 500
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["event_type", "data"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

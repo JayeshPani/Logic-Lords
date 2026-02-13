@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "maintenance.completed",
+  "allOf": [
+    {
+      "$ref": "../core/event-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "maintenance.completed"
+        },
+        "data": {
+          "type": "object",
+          "required": ["maintenance_id", "asset_id", "completed_at", "performed_by"],
+          "properties": {
+            "maintenance_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "completed_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "performed_by": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 5000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["event_type", "data"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

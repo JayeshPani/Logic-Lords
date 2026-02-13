@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "notification.dispatch.command",
+  "allOf": [
+    {
+      "$ref": "../core/command-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "command_type": {
+          "const": "notification.dispatch"
+        },
+        "payload": {
+          "type": "object",
+          "required": ["channel", "recipient", "message", "severity"],
+          "properties": {
+            "channel": {
+              "type": "string",
+              "enum": ["email", "sms", "webhook", "chat"]
+            },
+            "recipient": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["healthy", "watch", "warning", "critical"]
+            },
+            "context": {
+              "type": "object",
+              "additionalProperties": {
+                "type": ["string", "number", "boolean", "null"]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["command_type", "payload"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

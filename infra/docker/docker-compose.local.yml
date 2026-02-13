@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:16
+    environment:
+      POSTGRES_USER: infraguard
+      POSTGRES_PASSWORD: infraguard
+      POSTGRES_DB: infraguard
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infraguard -d infraguard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: docker.io/library/redis:7
+    ports:
+      - "6379:6379"
+
+  mosquitto:
+    image: docker.io/eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+
+volumes:
+  postgres_data:

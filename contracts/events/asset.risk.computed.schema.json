@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "asset.risk.computed",
+  "allOf": [
+    {
+      "$ref": "../core/event-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "asset.risk.computed"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "asset_id",
+            "evaluated_at",
+            "health_score",
+            "risk_level",
+            "failure_probability_72h",
+            "anomaly_flag"
+          ],
+          "properties": {
+            "asset_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evaluated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "health_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "risk_level": {
+              "type": "string",
+              "enum": ["Very Low", "Low", "Moderate", "High", "Critical"]
+            },
+            "failure_probability_72h": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "anomaly_flag": {
+              "type": "integer",
+              "enum": [0, 1]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["event_type", "data"]
+    }
+  ],
+  "unevaluatedProperties": false
+}
