@@ -23,3 +23,10 @@ UNION ALL
 SELECT 'event_outbox_failed', COUNT(*) FROM event_outbox WHERE status = 'failed'
 ORDER BY table_name;
 SQL
+
+echo
+echo "Outbox backlog metrics:"
+"${PSQL}" -P pager=off <<'SQL'
+SELECT status, event_count, oldest_event, newest_event
+FROM outbox_status_metrics();
+SQL

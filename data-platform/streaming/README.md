@@ -19,6 +19,9 @@ make streaming-enqueue
 
 # Dispatch pending outbox events
 make streaming-dispatch
+
+# Inspect outbox metrics + table counts
+make data-platform-status
 ```
 
 ## Runtime Pattern
@@ -26,3 +29,5 @@ make streaming-dispatch
 - Dispatcher reads pending rows via `dequeue_outbox_events(batch_size)`.
 - Dispatched rows are marked as `published`.
 - Insert trigger emits `pg_notify('infraguard_outbox', ...)` for reactive consumers.
+- Failed publication retries can be recorded via `mark_outbox_event_failed(event_id, retry_delay_seconds)`.
+- Backlog metrics are exposed via `outbox_status_metrics()`.

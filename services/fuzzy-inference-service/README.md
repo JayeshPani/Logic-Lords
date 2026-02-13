@@ -14,6 +14,7 @@ Mamdani fuzzy inference engine for interpretable infrastructure risk scoring.
 
 - `GET /health`
 - `POST /infer`
+- `GET /metrics`
 
 ## Run
 
@@ -21,3 +22,22 @@ Mamdani fuzzy inference engine for interpretable infrastructure risk scoring.
 cd services/fuzzy-inference-service
 python3 -m uvicorn src.main:app --reload --port 8102
 ```
+
+## Environment
+
+- `FUZZY_LOG_LEVEL` (default: `INFO`)
+- `FUZZY_CENTROID_RESOLUTION` (default: `401`)
+- `FUZZY_ANOMALY_FLAG_THRESHOLD` (default: `0.7`)
+- `FUZZY_EVENT_PRODUCED_BY` (default: `services/fuzzy-inference-service`)
+
+## Module-5 Validation
+
+```bash
+make module5-check
+```
+
+## Notes
+
+- `/infer` emits structured JSON logs with trace-aware fields.
+- `asset.risk.computed` event payload shape is built on each inference and validated by contract tests.
+- `/metrics` exposes in-memory Prometheus-style counters and latency metrics for inference traffic.

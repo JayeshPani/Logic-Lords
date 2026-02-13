@@ -100,4 +100,24 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION outbox_status_metrics()
+RETURNS TABLE(
+  status text,
+  event_count bigint,
+  oldest_event timestamptz,
+  newest_event timestamptz
+)
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT
+    eo.status,
+    COUNT(*)::bigint AS event_count,
+    MIN(eo.created_at) AS oldest_event,
+    MAX(eo.created_at) AS newest_event
+  FROM event_outbox eo
+  GROUP BY eo.status
+  ORDER BY eo.status;
+$$;
+
 COMMIT;

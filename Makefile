@@ -1,6 +1,7 @@
 .PHONY: check-structure \
 	data-platform-up data-platform-down data-platform-migrate data-platform-seed data-platform-status \
 	streaming-enqueue streaming-dispatch \
+	module4-check module5-check \
 	ai-step2 ai-step3 ai-step3-test ai-check
 
 check-structure:
@@ -41,3 +42,11 @@ streaming-enqueue:
 
 streaming-dispatch:
 	bash scripts/streaming_dispatch_outbox.sh
+
+module4-check:
+	$(PYTHON) -m pytest -q tests/contract/test_storage_streaming_artifacts.py
+	$(PYTHON) -m pytest -q tests/integration/test_storage_streaming_runtime.py
+
+module5-check:
+	$(PYTHON) -m pytest -q services/fuzzy-inference-service/tests/test_fuzzy_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_fuzzy_inference_contracts.py

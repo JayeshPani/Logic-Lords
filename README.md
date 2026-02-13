@@ -41,3 +41,5 @@ AI-based urban infrastructure health monitoring platform with autonomous orchest
 9. Run step-3 contract assertions using `scripts/validate_ai_contracts.py --fail-on-invalid`.
 10. Run step-2 + step-3 in one command using `make ai-check`.
 11. Bring up Module-4 storage layer using `make data-platform-up && make data-platform-migrate`.
+12. Validate Module-4 contracts + runtime behavior using `make module4-check`.
+13. Validate Module-5 fuzzy service contracts and observability using `make module5-check`.

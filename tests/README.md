@@ -19,4 +19,18 @@ make ai-check
 
 ```bash
 python3 -m pytest -q tests/contract/test_storage_streaming_artifacts.py
+python3 -m pytest -q tests/integration/test_storage_streaming_runtime.py
+
+# Combined contract + runtime validation:
+make module4-check
+```
+
+## Module-5 Contract Checks
+
+```bash
+python3 -m pytest -q services/fuzzy-inference-service/tests/test_fuzzy_service.py
+python3 -m pytest -q tests/contract/test_fuzzy_inference_contracts.py
+
+# Combined service + contract validation:
+make module5-check
 ```

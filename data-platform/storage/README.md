@@ -26,6 +26,9 @@ make data-platform-seed
 
 # Inspect migration versions and core table counts
 make data-platform-status
+
+# Run Module-4 checks (contract + integration)
+make module4-check
 ```
 
 ## Notes
@@ -36,8 +39,19 @@ make data-platform-status
   - `INFRAGUARD_DB_CONTAINER=infraguard-postgres`
   - `INFRAGUARD_DB_IMAGE=docker.io/library/postgres:16`
   - `INFRAGUARD_DB_PORT=55432`
+- If `INFRAGUARD_DB_PORT` is unavailable, startup auto-selects the next free host port.
 - If the default host port is unavailable, override it:
 
 ```bash
 INFRAGUARD_DB_PORT=55491 make data-platform-up
+```
+
+## Cleanup
+
+```bash
+# Stop container only (keeps named volume data)
+make data-platform-down
+
+# Stop container and remove named volume data
+INFRAGUARD_DB_REMOVE_VOLUME=1 make data-platform-down
 ```

@@ -26,6 +26,7 @@ def test_streaming_runtime_migration_contains_outbox_functions() -> None:
     assert "notify_event_outbox_insert" in text
     assert "dequeue_outbox_events" in text
     assert "mark_outbox_event_failed" in text
+    assert "outbox_status_metrics" in text
 
 
 def test_module4_scripts_exist() -> None:
@@ -36,6 +37,7 @@ def test_module4_scripts_exist() -> None:
         "scripts/storage_migrate.sh",
         "scripts/storage_seed_dev.sh",
         "scripts/storage_status.sh",
+        "scripts/wait_for_postgres.sh",
         "scripts/streaming_enqueue_event.sh",
         "scripts/streaming_dispatch_outbox.sh",
     ]

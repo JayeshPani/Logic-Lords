@@ -12,8 +12,15 @@ start_ts="$(date +%s)"
 
 while true; do
   if ! docker inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then
-    echo "PostgreSQL container not found: ${CONTAINER_NAME}" >&2
-    exit 1
+    now_ts="$(date +%s)"
+    elapsed="$((now_ts - start_ts))"
+    if [ "${elapsed}" -ge "${MAX_WAIT_SECONDS}" ]; then
+      echo "PostgreSQL container not found after ${MAX_WAIT_SECONDS}s: ${CONTAINER_NAME}" >&2
+      exit 1
+    fi
+
+    sleep 2
+    continue
   fi
 
   if docker exec "${CONTAINER_NAME}" pg_isready -U "${DB_USER}" -d "${DB_NAME}" >/dev/null 2>&1; then
