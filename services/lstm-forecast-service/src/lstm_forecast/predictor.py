@@ -1,6 +1,7 @@
 """Predictor implementations for failure probability estimation."""
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Protocol
 
@@ -83,7 +84,11 @@ class KerasLSTMPredictor:
             raise RuntimeError("TensorFlow is required for keras predictor mode") from exc
 
         self._tf = tf
-        self._model = tf.keras.models.load_model(model_path)
+        model_file = TorchLSTMPredictor._resolve_path(model_path)
+        if not model_file.exists():
+            raise RuntimeError(f"Keras model file not found: {model_file}")
+        self._model = tf.keras.models.load_model(model_file)
+        self._model_path = model_file
 
     @staticmethod
     def _clamp(value: float) -> float:
@@ -117,7 +122,11 @@ class PredictorFactory:
         if mode == "torch":
             if not settings.torch_model_path:
                 raise RuntimeError("FORECAST_TORCH_MODEL_PATH must be set in torch mode")
-            return TorchLSTMPredictor(settings.torch_model_path)
+            return TorchLSTMPredictor(
+                model_path=settings.torch_model_path,
+                meta_path=settings.torch_meta_path,
+                min_confidence=settings.min_model_confidence,
+            )
 
         return SurrogateLSTMPredictor()
 
@@ -150,7 +159,29 @@ class TorchLSTMPredictor:
 
         return direct
 
-    def __init__(self, model_path: str):
+    @staticmethod
+    def _load_metadata(meta_path: str | None) -> dict:
+        if not meta_path:
+            return {}
+
+        meta_file = TorchLSTMPredictor._resolve_path(meta_path)
+        if not meta_file.exists():
+            raise RuntimeError(f"Torch metadata file not found: {meta_file}")
+
+        try:
+            metadata = json.loads(meta_file.read_text())
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Invalid Torch metadata JSON: {meta_file}") from exc
+
+        required = ["model_name", "model_version", "mode"]
+        missing = [field for field in required if field not in metadata]
+        if missing:
+            raise RuntimeError(
+                f"Missing required metadata fields in {meta_file}: {', '.join(missing)}"
+            )
+        return metadata
+
+    def __init__(self, model_path: str, meta_path: str | None = None, min_confidence: float = 0.0):
         try:
             import torch
         except ImportError as exc:  # pragma: no cover
@@ -163,6 +194,8 @@ class TorchLSTMPredictor:
 
         checkpoint = torch.load(model_file, map_location="cpu")
         input_size = int(checkpoint.get("input_size", 4))
+        self._metadata = self._load_metadata(meta_path)
+        self._min_confidence = max(0.0, min(1.0, min_confidence))
 
         class _TorchNet(torch.nn.Module):
             def __init__(self, in_features: int):
@@ -200,11 +233,16 @@ class TorchLSTMPredictor:
             raw = float(self._model(tensor).cpu().numpy()[0][0])
 
         probability = round(self._clamp(raw), 4)
+        confidence = max(0.98, self._min_confidence)
+        model_name = self._metadata.get("model_name", "lstm_failure_predictor_torch")
+        model_version = self._metadata.get("model_version", "v1")
+        model_mode = self._metadata.get("mode", "torch")
+
         return PredictorResult(
             failure_probability=probability,
-            confidence=0.98,
-            model_name="lstm_failure_predictor_torch",
-            model_version="v1",
-            model_mode="torch",
+            confidence=confidence,
+            model_name=model_name,
+            model_version=model_version,
+            model_mode=model_mode,
             architecture=self.ARCHITECTURE,
         )

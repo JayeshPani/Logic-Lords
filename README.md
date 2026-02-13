@@ -43,3 +43,5 @@ AI-based urban infrastructure health monitoring platform with autonomous orchest
 11. Bring up Module-4 storage layer using `make data-platform-up && make data-platform-migrate`.
 12. Validate Module-4 contracts + runtime behavior using `make module4-check`.
 13. Validate Module-5 fuzzy service contracts and observability using `make module5-check`.
+14. Validate Module-6 forecast service contracts and observability using `make module6-check`.
+15. Validate Module-7 anomaly service contracts and observability using `make module7-check`.

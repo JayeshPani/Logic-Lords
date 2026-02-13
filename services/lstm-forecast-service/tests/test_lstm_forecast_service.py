@@ -3,11 +3,19 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+import pytest
 
 from lstm_forecast.config import Settings
+from lstm_forecast.events import build_asset_failure_predicted_event
+from lstm_forecast.observability import get_metrics
 from lstm_forecast.predictor import SurrogateLSTMPredictor
 from lstm_forecast.preprocessing import SensorNormalizer, SequenceBuilder
 from lstm_forecast.main import app
+
+
+@pytest.fixture(autouse=True)
+def reset_metrics() -> None:
+    get_metrics().reset()
 
 
 def _history(points: int, aggressive: bool) -> list[dict]:
@@ -88,3 +96,43 @@ def test_forecast_rejects_short_history() -> None:
         },
     )
     assert response.status_code == 422
+
+
+def test_metrics_endpoint_tracks_forecast_calls() -> None:
+    client = TestClient(app)
+    before = client.get("/metrics")
+    assert before.status_code == 200
+    assert "infraguard_forecast_requests_total 0" in before.text
+
+    response = client.post(
+        "/forecast",
+        json={
+            "asset_id": "asset_w12_bridge_42",
+            "horizon_hours": 72,
+            "history": _history(20, aggressive=True),
+        },
+        headers={"x-trace-id": "trace-forecast-metrics-001"},
+    )
+    assert response.status_code == 200
+
+    after = client.get("/metrics")
+    assert after.status_code == 200
+    assert "infraguard_forecast_requests_total 1" in after.text
+    assert "infraguard_forecast_success_total 1" in after.text
+    assert "infraguard_forecast_errors_total 0" in after.text
+
+
+def test_asset_failure_predicted_event_builder() -> None:
+    generated_at = datetime.now(tz=timezone.utc)
+    result = SurrogateLSTMPredictor().predict([[0.2, 0.3, 0.4, 0.5], [0.3, 0.4, 0.5, 0.6]])
+    event = build_asset_failure_predicted_event(
+        asset_id="asset_w12_bridge_42",
+        generated_at=generated_at,
+        horizon_hours=72,
+        result=result,
+        trace_id="trace-event-forecast-0001",
+        produced_by="services/lstm-forecast-service",
+    )
+    assert event["event_type"] == "asset.failure.predicted"
+    assert event["data"]["horizon_hours"] == 72
+    assert 0 <= event["data"]["failure_probability_72h"] <= 1

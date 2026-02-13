@@ -1,7 +1,7 @@
 .PHONY: check-structure \
 	data-platform-up data-platform-down data-platform-migrate data-platform-seed data-platform-status \
 	streaming-enqueue streaming-dispatch \
-	module4-check module5-check \
+	module4-check module5-check module6-check module7-check \
 	ai-step2 ai-step3 ai-step3-test ai-check
 
 check-structure:
@@ -50,3 +50,11 @@ module4-check:
 module5-check:
 	$(PYTHON) -m pytest -q services/fuzzy-inference-service/tests/test_fuzzy_service.py
 	$(PYTHON) -m pytest -q tests/contract/test_fuzzy_inference_contracts.py
+
+module6-check:
+	$(PYTHON) -m pytest -q services/lstm-forecast-service/tests/test_lstm_forecast_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_lstm_forecast_contracts.py
+
+module7-check:
+	$(PYTHON) -m pytest -q services/anomaly-detection-service/tests/test_anomaly_detection_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_anomaly_detection_contracts.py

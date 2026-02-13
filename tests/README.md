@@ -34,3 +34,23 @@ python3 -m pytest -q tests/contract/test_fuzzy_inference_contracts.py
 # Combined service + contract validation:
 make module5-check
 ```
+
+## Module-6 Contract Checks
+
+```bash
+python3 -m pytest -q services/lstm-forecast-service/tests/test_lstm_forecast_service.py
+python3 -m pytest -q tests/contract/test_lstm_forecast_contracts.py
+
+# Combined service + contract validation:
+make module6-check
+```
+
+## Module-7 Contract Checks
+
+```bash
+python3 -m pytest -q services/anomaly-detection-service/tests/test_anomaly_detection_service.py
+python3 -m pytest -q tests/contract/test_anomaly_detection_contracts.py
+
+# Combined service + contract validation:
+make module7-check
+```

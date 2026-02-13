@@ -30,6 +30,7 @@ class AnomalyDetector:
         self._pretrained_model = None
         self._pretrained_decision_min = None
         self._pretrained_decision_max = None
+        self._pretrained_confidence = None
 
         try:
             from sklearn.ensemble import IsolationForest
@@ -39,7 +40,16 @@ class AnomalyDetector:
         except Exception:
             self._has_sklearn = False
 
-        self._load_pretrained_model()
+        try:
+            self._load_pretrained_model()
+        except RuntimeError:
+            if self.settings.fallback_to_heuristic_on_startup_error:
+                self._pretrained_model = None
+                self._pretrained_decision_min = None
+                self._pretrained_decision_max = None
+                self._pretrained_confidence = None
+            else:
+                raise
 
     def _load_pretrained_model(self) -> None:
         """Load a pre-trained Isolation Forest model when configured."""
@@ -53,10 +63,13 @@ class AnomalyDetector:
 
         try:
             import joblib
-        except Exception:  # pragma: no cover
-            return
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError("joblib is required to load a pretrained anomaly model") from exc
 
-        self._pretrained_model = joblib.load(model_path)
+        try:
+            self._pretrained_model = joblib.load(model_path)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to load pretrained anomaly model: {model_path}") from exc
 
         if self.settings.pretrained_meta_path:
             meta_path = self._resolve_path(self.settings.pretrained_meta_path)
@@ -65,9 +78,20 @@ class AnomalyDetector:
                     meta = json.loads(meta_path.read_text())
                     self._pretrained_decision_min = float(meta.get("decision_min"))
                     self._pretrained_decision_max = float(meta.get("decision_max"))
-                except Exception:
-                    self._pretrained_decision_min = None
-                    self._pretrained_decision_max = None
+                    confidence = meta.get("confidence")
+                    self._pretrained_confidence = float(confidence) if confidence is not None else None
+                except Exception as exc:
+                    raise RuntimeError(f"Invalid anomaly metadata file: {meta_path}") from exc
+
+                if self.settings.min_model_confidence > 0:
+                    if self._pretrained_confidence is None:
+                        raise RuntimeError(
+                            "Anomaly metadata confidence missing while min_model_confidence is configured"
+                        )
+                    if self._pretrained_confidence < self.settings.min_model_confidence:
+                        raise RuntimeError(
+                            "Pretrained anomaly model confidence is below configured minimum threshold"
+                        )
 
     @staticmethod
     def _resolve_path(path_str: str) -> Path:
