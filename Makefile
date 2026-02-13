@@ -1,7 +1,7 @@
 .PHONY: check-structure \
 	data-platform-up data-platform-down data-platform-migrate data-platform-seed data-platform-status \
 	streaming-enqueue streaming-dispatch \
-	module4-check module5-check module6-check module7-check module8-check module9-check module10-check module11-check module12-check \
+	module4-check module5-check module6-check module7-check module8-check module9-check module10-check module11-check module12-check module13-check \
 	ai-step2 ai-step3 ai-step3-test ai-check
 
 check-structure:
@@ -78,3 +78,7 @@ module11-check:
 module12-check:
 	$(PYTHON) -m pytest -q services/blockchain-verification-service/tests/test_blockchain_verification_service.py
 	$(PYTHON) -m pytest -q tests/contract/test_blockchain_verification_contracts.py
+
+module13-check:
+	$(PYTHON) -m pytest -q apps/api-gateway/tests/test_api_gateway.py
+	$(PYTHON) -m pytest -q tests/contract/test_api_gateway_contracts.py

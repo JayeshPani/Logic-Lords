@@ -50,3 +50,4 @@ AI-based urban infrastructure health monitoring platform with autonomous orchest
 18. Validate Module-10 report-generation contracts and evidence outputs using `make module10-check`.
 19. Validate Module-11 notification dispatch contracts and retry/fallback behavior using `make module11-check`.
 20. Validate Module-12 blockchain verification contracts and confirmation tracking using `make module12-check`.
+21. Validate Module-13 API gateway auth/rate-limit facade and OpenAPI contract alignment using `make module13-check`.
