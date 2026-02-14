@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "apps/api-gateway/src"))
 
 from api_gateway.main import app  # noqa: E402
+from api_gateway import routes as gateway_routes  # noqa: E402
 from api_gateway.security import get_rate_limiter  # noqa: E402
 from api_gateway.store import get_store  # noqa: E402
 
@@ -68,6 +69,7 @@ def test_gateway_openapi_paths_and_responses() -> None:
         "/assets/{asset_id}/health": "get",
         "/assets/{asset_id}/forecast": "get",
         "/maintenance/{maintenance_id}/verification": "get",
+        "/blockchain/connect": "post",
     }
     for path, method in required_paths.items():
         assert path in spec["paths"]
@@ -99,3 +101,20 @@ def test_gateway_openapi_paths_and_responses() -> None:
     verification = client.get("/maintenance/mnt_20260214_0012/verification", headers=AUTH_HEADERS)
     assert verification.status_code == 200
     _validate(spec, "MaintenanceVerificationResponse", verification.json())
+
+    gateway_routes._connect_blockchain_service = lambda _trace_id: {
+        "connected": True,
+        "network": "sepolia",
+        "expected_chain_id": 11155111,
+        "chain_id": 11155111,
+        "latest_block": 100005,
+        "contract_address": "0x" + "1" * 40,
+        "contract_deployed": True,
+        "checked_at": "2026-02-14T06:10:00+00:00",
+        "message": "Connected to Sepolia RPC.",
+        "source": "services/blockchain-verification-service",
+    }
+
+    connect = client.post("/blockchain/connect", headers=AUTH_HEADERS)
+    assert connect.status_code == 200
+    _validate(spec, "BlockchainConnectResponse", connect.json())

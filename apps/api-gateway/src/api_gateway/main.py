@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .errors import ApiError, error_response
@@ -16,6 +20,23 @@ configure_logging(settings.log_level)
 app = FastAPI(title=settings.service_name, version=settings.service_version)
 app.include_router(router)
 _metrics = get_metrics()
+_dashboard_root = Path(__file__).resolve().parents[3] / "dashboard-web"
+_dashboard_index = _dashboard_root / "index.html"
+_dashboard_static_dir = _dashboard_root / "src"
+
+if _dashboard_static_dir.exists():
+    app.mount(
+        "/dashboard-static",
+        StaticFiles(directory=str(_dashboard_static_dir)),
+        name="dashboard-static",
+    )
+
+
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard() -> FileResponse:
+    if not _dashboard_index.exists():
+        raise HTTPException(status_code=404, detail="Dashboard web assets not found.")
+    return FileResponse(_dashboard_index)
 
 
 @app.exception_handler(ApiError)

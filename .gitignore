@@ -22,6 +22,11 @@ dist/
 coverage/
 .tmp/
 
+# Foundry/contract artifacts
+blockchain/out/
+blockchain/cache/
+blockchain/broadcast/
+
 # InfraGuard datasets (do not push raw datasets)
 archive (3)/
 data-platform/ml/datasets/**

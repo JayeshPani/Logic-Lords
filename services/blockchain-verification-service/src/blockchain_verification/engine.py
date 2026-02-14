@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 
 from .config import Settings
 from .events import build_maintenance_verified_blockchain_event
-from .schemas import VerificationRecordBlockchainCommand
+from .schemas import SepoliaConnectionResponse, VerificationRecordBlockchainCommand
+from .sepolia_rpc import SepoliaRpcClient, SepoliaRpcError
 from .store import InMemoryVerificationStore, VerificationRecordMutable
 
 
@@ -116,6 +118,112 @@ class BlockchainVerificationEngine:
         """List verification records filtered by status/asset."""
 
         return self._store.list(status=status, asset_id=asset_id)
+
+    def connect_sepolia(self) -> SepoliaConnectionResponse:
+        """Verify Sepolia RPC connectivity and optional contract availability."""
+
+        checked_at = datetime.now(tz=timezone.utc)
+        configured_contract = self._settings.sepolia_contract_address
+        contract_address = self._normalize_contract_address(configured_contract)
+        contract_warning = ""
+        if configured_contract and contract_address is None:
+            contract_warning = (
+                " Invalid BLOCKCHAIN_VERIFICATION_SEPOLIA_CONTRACT_ADDRESS was ignored "
+                "(expected 0x + 40 hex chars)."
+            )
+
+        if not self._settings.sepolia_rpc_url:
+            return SepoliaConnectionResponse(
+                connected=False,
+                expected_chain_id=self._settings.sepolia_chain_id,
+                chain_id=None,
+                latest_block=None,
+                contract_address=contract_address,
+                contract_deployed=None,
+                checked_at=checked_at,
+                message=(
+                    "Sepolia RPC is not configured. Set BLOCKCHAIN_VERIFICATION_SEPOLIA_RPC_URL."
+                    f"{contract_warning}"
+                ),
+            )
+
+        client = SepoliaRpcClient(
+            rpc_url=self._settings.sepolia_rpc_url,
+            timeout_seconds=self._settings.sepolia_rpc_timeout_seconds,
+        )
+
+        try:
+            chain_id = client.get_chain_id()
+            latest_block = client.get_latest_block_number()
+        except SepoliaRpcError as exc:
+            return SepoliaConnectionResponse(
+                connected=False,
+                expected_chain_id=self._settings.sepolia_chain_id,
+                chain_id=None,
+                latest_block=None,
+                contract_address=contract_address,
+                contract_deployed=None,
+                checked_at=checked_at,
+                message=f"Sepolia RPC connection failed: {exc}.{contract_warning}",
+            )
+
+        if chain_id != self._settings.sepolia_chain_id:
+            return SepoliaConnectionResponse(
+                connected=False,
+                expected_chain_id=self._settings.sepolia_chain_id,
+                chain_id=chain_id,
+                latest_block=latest_block,
+                contract_address=contract_address,
+                contract_deployed=None,
+                checked_at=checked_at,
+                message=(
+                    f"Connected RPC chain_id={chain_id}, expected "
+                    f"{self._settings.sepolia_chain_id} (Sepolia).{contract_warning}"
+                ),
+            )
+
+        contract_deployed: bool | None = None
+        message = f"Connected to Sepolia RPC.{contract_warning}"
+
+        if contract_address:
+            try:
+                contract_deployed = client.contract_is_deployed(contract_address)
+            except SepoliaRpcError as exc:
+                return SepoliaConnectionResponse(
+                    connected=False,
+                    expected_chain_id=self._settings.sepolia_chain_id,
+                    chain_id=chain_id,
+                    latest_block=latest_block,
+                    contract_address=contract_address,
+                    contract_deployed=None,
+                    checked_at=checked_at,
+                    message=f"Sepolia contract lookup failed: {exc}.{contract_warning}",
+                )
+
+            if not contract_deployed:
+                message = f"Connected to Sepolia, but no contract code at {contract_address}."
+
+        return SepoliaConnectionResponse(
+            connected=True,
+            expected_chain_id=self._settings.sepolia_chain_id,
+            chain_id=chain_id,
+            latest_block=latest_block,
+            contract_address=contract_address,
+            contract_deployed=contract_deployed,
+            checked_at=checked_at,
+            message=message,
+        )
+
+    @staticmethod
+    def _normalize_contract_address(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if re.fullmatch(r"0x[a-fA-F0-9]{40}", normalized):
+            return normalized
+        return None
 
     @staticmethod
     def _build_tx_hash(command: VerificationRecordBlockchainCommand) -> str:

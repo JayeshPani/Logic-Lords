@@ -14,6 +14,7 @@ from .schemas import (
     HealthResponse,
     MaintenanceVerifiedBlockchainEvent,
     RecordVerificationResponse,
+    SepoliaConnectionResponse,
     TrackVerificationResponse,
     VerificationListResponse,
     VerificationRecord,
@@ -179,3 +180,54 @@ def list_verifications(
 ) -> VerificationListResponse:
     items = [_to_record(record_obj) for record_obj in _engine.list(status=status, asset_id=asset_id)]
     return VerificationListResponse(items=items)
+
+
+@router.post("/onchain/connect", response_model=SepoliaConnectionResponse)
+def connect_onchain() -> SepoliaConnectionResponse:
+    """Validate live Sepolia connectivity for UI-triggered checks."""
+
+    started = perf_counter()
+    try:
+        status = SepoliaConnectionResponse.model_validate(_engine.connect_sepolia())
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        latency_ms = (perf_counter() - started) * 1000.0
+        message = f"Sepolia connection check failed: {exc}"
+        if len(message) > 480:
+            message = message[:480]
+
+        log_event(
+            logger,
+            "onchain_connect_exception",
+            error=str(exc),
+            latency_ms=round(latency_ms, 3),
+        )
+
+        return SepoliaConnectionResponse(
+            connected=False,
+            expected_chain_id=_settings.sepolia_chain_id,
+            chain_id=None,
+            latest_block=None,
+            contract_address=None,
+            contract_deployed=None,
+            checked_at=datetime.now(tz=timezone.utc),
+            message=message,
+        )
+
+    latency_ms = (perf_counter() - started) * 1000.0
+
+    try:
+        log_event(
+            logger,
+            "onchain_connect_status",
+            connected=status.connected,
+            expected_chain_id=status.expected_chain_id,
+            chain_id=status.chain_id,
+            latest_block=status.latest_block,
+            contract_address=status.contract_address,
+            contract_deployed=status.contract_deployed,
+            latency_ms=round(latency_ms, 3),
+        )
+    except Exception as exc:  # pragma: no cover - logging should never break endpoint
+        logger.exception("onchain_connect_status_log_failed: %s", exc)
+
+    return status

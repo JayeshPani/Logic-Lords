@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     event_produced_by: str = "services/blockchain-verification-service"
     required_confirmations: int = 3
     initial_block_number: int = 100000
+    sepolia_rpc_url: str | None = None
+    sepolia_chain_id: int = 11155111
+    sepolia_contract_address: str | None = None
+    sepolia_rpc_timeout_seconds: float = 6.0
 
     model_config = SettingsConfigDict(env_prefix="BLOCKCHAIN_VERIFICATION_", extra="ignore")
 

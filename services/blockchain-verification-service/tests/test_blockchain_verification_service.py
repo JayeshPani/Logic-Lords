@@ -1,5 +1,6 @@
 """Tests for blockchain verification service."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 from uuid import uuid4
@@ -13,6 +14,7 @@ sys.path.append(str(ROOT / "src"))
 from blockchain_verification.main import app  # noqa: E402
 from blockchain_verification.observability import get_metrics  # noqa: E402
 from blockchain_verification.routes import _engine  # noqa: E402
+from blockchain_verification.schemas import SepoliaConnectionResponse  # noqa: E402
 
 
 def _command(
@@ -133,3 +135,77 @@ def test_metrics_track_record_and_confirmation_calls() -> None:
     assert "infraguard_verification_track_requests_total 3" in metrics.text
     assert "infraguard_verification_submitted_total 1" in metrics.text
     assert "infraguard_verification_confirmed_total 1" in metrics.text
+
+
+def test_onchain_connect_returns_not_configured_when_rpc_missing() -> None:
+    client = TestClient(app)
+
+    response = client.post("/onchain/connect")
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["network"] == "sepolia"
+    assert body["connected"] is False
+    assert body["expected_chain_id"] == 11155111
+    assert "SEPOLIA_RPC_URL" in body["message"]
+
+
+def test_onchain_connect_uses_engine_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    expected = SepoliaConnectionResponse(
+        connected=True,
+        network="sepolia",
+        expected_chain_id=11155111,
+        chain_id=11155111,
+        latest_block=100001,
+        contract_address="0x" + "1" * 40,
+        contract_deployed=True,
+        checked_at=datetime.now(tz=timezone.utc),
+        message="Connected to Sepolia RPC.",
+    )
+
+    monkeypatch.setattr(_engine, "connect_sepolia", lambda: expected)
+
+    response = client.post("/onchain/connect")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is True
+    assert body["chain_id"] == 11155111
+    assert body["latest_block"] == 100001
+    assert body["contract_deployed"] is True
+
+
+def test_onchain_connect_ignores_invalid_contract_address_config() -> None:
+    client = TestClient(app)
+
+    previous = _engine._settings.sepolia_contract_address
+    _engine._settings.sepolia_contract_address = "0x<your-contract-address>"
+    try:
+        response = client.post("/onchain/connect")
+    finally:
+        _engine._settings.sepolia_contract_address = previous
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is False
+    assert body["contract_address"] is None
+    assert "ignored" in body["message"].lower()
+
+
+def test_onchain_connect_returns_structured_failure_on_unexpected_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(app)
+
+    def _raise_unexpected() -> SepoliaConnectionResponse:
+        raise RuntimeError("unexpected failure from engine")
+
+    monkeypatch.setattr(_engine, "connect_sepolia", _raise_unexpected)
+
+    response = client.post("/onchain/connect")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is False
+    assert body["network"] == "sepolia"
+    assert "failed" in body["message"].lower()

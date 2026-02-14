@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
+    blockchain_verification_base_url: str = "http://127.0.0.1:8105"
+    blockchain_connect_timeout_seconds: float = 6.0
 
     model_config = SettingsConfigDict(env_prefix="API_GATEWAY_", extra="ignore")
 

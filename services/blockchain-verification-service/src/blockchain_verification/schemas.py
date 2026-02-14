@@ -104,6 +104,20 @@ class VerificationListResponse(BaseModel):
     items: list[VerificationRecord]
 
 
+class SepoliaConnectionResponse(BaseModel):
+    """Connection status for Sepolia RPC and optional contract lookup."""
+
+    connected: bool
+    network: Literal["sepolia"] = "sepolia"
+    expected_chain_id: int = Field(ge=1)
+    chain_id: int | None = Field(default=None, ge=1)
+    latest_block: int | None = Field(default=None, ge=0)
+    contract_address: str | None = Field(default=None, pattern=r"^0x[a-fA-F0-9]{40}$")
+    contract_deployed: bool | None = None
+    checked_at: datetime
+    message: str = Field(min_length=1, max_length=500)
+
+
 class HealthResponse(BaseModel):
     """Health endpoint response."""
 

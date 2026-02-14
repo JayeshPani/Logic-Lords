@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-13T18:11:57.557792+00:00",
+  "generated_at": "2026-02-14T06:11:45.352626+00:00",
   "model_path": "data-platform/ml/models/isolation_forest.joblib",
   "meta_path": "data-platform/ml/models/isolation_forest.meta.json",
   "anomaly_threshold": 0.65,

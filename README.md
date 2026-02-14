@@ -50,4 +50,7 @@ AI-based urban infrastructure health monitoring platform with autonomous orchest
 18. Validate Module-10 report-generation contracts and evidence outputs using `make module10-check`.
 19. Validate Module-11 notification dispatch contracts and retry/fallback behavior using `make module11-check`.
 20. Validate Module-12 blockchain verification contracts and confirmation tracking using `make module12-check`.
-21. Validate Module-13 API gateway auth/rate-limit facade and OpenAPI contract alignment using `make module13-check`.
+21. Deploy `InfraGuardVerification` to Sepolia (no Hardhat) using `bash blockchain/scripts/deploy_sepolia_foundry.sh`.
+22. Validate Module-13 API gateway auth/rate-limit facade and OpenAPI contract alignment using `make module13-check`.
+23. Validate Module-14 dashboard web module rendering + asset serving using `make module14-check`.
+24. Run Step-15 full test matrix (contract -> integration -> e2e -> performance) using `make module15-check`.

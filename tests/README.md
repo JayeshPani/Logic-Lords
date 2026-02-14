@@ -114,3 +114,24 @@ python3 -m pytest -q tests/contract/test_api_gateway_contracts.py
 # Combined service + contract validation:
 make module13-check
 ```
+
+## Module-14 Dashboard Checks
+
+```bash
+python3 -m pytest -q apps/api-gateway/tests/test_dashboard_web.py
+
+# Combined dashboard smoke validation:
+make module14-check
+```
+
+## Step-15 Full Matrix
+
+```bash
+python3 -m pytest -q tests/contract
+python3 -m pytest -q tests/integration
+python3 -m pytest -q tests/e2e
+python3 -m pytest -q tests/performance
+
+# Combined matrix validation:
+make module15-check
+```

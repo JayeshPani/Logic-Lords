@@ -11,6 +11,8 @@ sys.path.append(str(ROOT / "src"))
 
 from api_gateway.main import app  # noqa: E402
 from api_gateway.observability import get_metrics  # noqa: E402
+from api_gateway.errors import ApiError  # noqa: E402
+from api_gateway import routes as gateway_routes  # noqa: E402
 from api_gateway.security import get_rate_limiter  # noqa: E402
 from api_gateway.store import get_store  # noqa: E402
 
@@ -109,3 +111,49 @@ def test_rate_limit_enforced() -> None:
     metrics = client.get("/metrics")
     assert metrics.status_code == 200
     assert "infraguard_api_gateway_rate_limited_total 1" in metrics.text
+
+
+def test_blockchain_connect_proxies_sepolia_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_connect(_trace_id: str) -> dict:
+        return {
+            "connected": True,
+            "network": "sepolia",
+            "expected_chain_id": 11155111,
+            "chain_id": 11155111,
+            "latest_block": 100042,
+            "contract_address": "0x" + "1" * 40,
+            "contract_deployed": True,
+            "checked_at": "2026-02-14T06:00:00+00:00",
+            "message": "Connected to Sepolia RPC.",
+        }
+
+    monkeypatch.setattr(gateway_routes, "_connect_blockchain_service", fake_connect)
+
+    response = client.post("/blockchain/connect", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is True
+    assert body["network"] == "sepolia"
+    assert body["chain_id"] == 11155111
+    assert body["contract_deployed"] is True
+
+
+def test_blockchain_connect_returns_error_when_service_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_connect(_trace_id: str) -> dict:
+        raise ApiError(
+            status_code=503,
+            code="BLOCKCHAIN_UNAVAILABLE",
+            message="Blockchain service unreachable: connection refused",
+            trace_id="trc_test_gateway_001",
+        )
+
+    monkeypatch.setattr(gateway_routes, "_connect_blockchain_service", fake_connect)
+
+    response = client.post("/blockchain/connect", headers=AUTH_HEADERS)
+    assert response.status_code == 503
+    body = response.json()
+    assert body["error"]["code"] == "BLOCKCHAIN_UNAVAILABLE"

@@ -194,3 +194,18 @@ class MaintenanceVerificationResponse(BaseModel):
 
     data: MaintenanceVerification
     meta: ApiMeta
+
+
+class BlockchainConnectResponse(BaseModel):
+    """Sepolia connectivity status proxied for dashboard use."""
+
+    connected: bool
+    network: Literal["sepolia"] = "sepolia"
+    expected_chain_id: int = Field(ge=1)
+    chain_id: int | None = Field(default=None, ge=1)
+    latest_block: int | None = Field(default=None, ge=0)
+    contract_address: str | None = Field(default=None, pattern=r"^0x[a-fA-F0-9]{40}$")
+    contract_deployed: bool | None = None
+    checked_at: datetime
+    message: str
+    source: str = "services/blockchain-verification-service"

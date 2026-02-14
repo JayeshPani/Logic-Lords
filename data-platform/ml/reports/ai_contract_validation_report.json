@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-13T18:11:59.730268+00:00",
+  "generated_at": "2026-02-14T06:11:47.722911+00:00",
   "summary": {
     "cases_total": 3,
     "checks_per_case": 7,
@@ -56,8 +56,8 @@
         }
       ],
       "sample_outputs": {
-        "forecast_mode": "torch",
-        "failure_probability_72h": 0.0602,
+        "forecast_mode": "surrogate",
+        "failure_probability_72h": 0.3476,
         "anomaly_score": 0.3963,
         "health_score": 0.6828,
         "risk_level": "High"
@@ -106,8 +106,8 @@
         }
       ],
       "sample_outputs": {
-        "forecast_mode": "torch",
-        "failure_probability_72h": 0.0602,
+        "forecast_mode": "surrogate",
+        "failure_probability_72h": 0.1826,
         "anomaly_score": 0.4723,
         "health_score": 0.3493,
         "risk_level": "Low"
@@ -156,8 +156,8 @@
         }
       ],
       "sample_outputs": {
-        "forecast_mode": "torch",
-        "failure_probability_72h": 0.0602,
+        "forecast_mode": "surrogate",
+        "failure_probability_72h": 0.1433,
         "anomaly_score": 0.3561,
         "health_score": 0.2633,
         "risk_level": "Low"
