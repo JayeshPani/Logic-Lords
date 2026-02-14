@@ -1,5 +1,7 @@
 import { CHART_THRESHOLDS, MAP_CONFIG, RISK_COLOR_BY_LEVEL, SEVERITY_COLOR } from "./config.js";
 
+const lstmAnimationRegistry = new WeakMap();
+
 function cssValue(name, fallback) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
@@ -688,10 +690,20 @@ export function renderMapLegend(container) {
   });
 }
 
-export function renderLstmOverviewChart(svg, lstmModel) {
+export function renderLstmOverviewChart(
+  svg,
+  lstmModel,
+  nodesModel = null,
+  selection = { selectedNodeId: null, selectedAssetId: null },
+) {
   if (!svg) {
     return;
   }
+  const existingAnimation = lstmAnimationRegistry.get(svg);
+  if (existingAnimation?.frameId) {
+    cancelAnimationFrame(existingAnimation.frameId);
+  }
+  lstmAnimationRegistry.delete(svg);
   svg.innerHTML = "";
 
   const width = 980;
@@ -700,26 +712,109 @@ export function renderLstmOverviewChart(svg, lstmModel) {
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  if (!lstmModel?.available) {
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", String(width / 2));
-    text.setAttribute("y", String(height / 2));
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("fill", "#94a3b8");
-    text.textContent = "LSTM simulator data unavailable";
-    svg.appendChild(text);
-    return;
-  }
+  const clamp01 = (value) => Math.max(0, Math.min(1, Number(value ?? 0)));
+
+  const pickFirebaseNode = () => {
+    const nodes = Array.isArray(nodesModel?.nodes) ? nodesModel.nodes : [];
+    if (!nodes.length || !nodesModel?.connected) {
+      return null;
+    }
+    const selectedNodeId = selection?.selectedNodeId || null;
+    const selectedAssetId = selection?.selectedAssetId || null;
+    if (selectedNodeId) {
+      const byNodeId = nodes.find((node) => node?.nodeId === selectedNodeId);
+      if (byNodeId) {
+        return byNodeId;
+      }
+    }
+    if (selectedAssetId) {
+      const byAsset = nodes.find((node) => node?.assetId === selectedAssetId);
+      if (byAsset) {
+        return byAsset;
+      }
+    }
+    const withTelemetry = nodes.filter((node) => {
+      const telemetry = node?.telemetry || {};
+      return ["strain", "vibration", "temperature"].every((key) => Number.isFinite(Number(telemetry?.[key]?.value)));
+    });
+    return withTelemetry[0] || nodes[0] || null;
+  };
+
+  const firebaseNode = pickFirebaseNode();
+  const firebaseHistorySeries = (() => {
+    if (!firebaseNode) {
+      return [];
+    }
+    const strainSamples = Array.isArray(firebaseNode?.telemetry?.strain?.samples)
+      ? firebaseNode.telemetry.strain.samples
+      : [firebaseNode?.telemetry?.strain?.value];
+    const vibrationSamples = Array.isArray(firebaseNode?.telemetry?.vibration?.samples)
+      ? firebaseNode.telemetry.vibration.samples
+      : [firebaseNode?.telemetry?.vibration?.value];
+    const temperatureSamples = Array.isArray(firebaseNode?.telemetry?.temperature?.samples)
+      ? firebaseNode.telemetry.temperature.samples
+      : [firebaseNode?.telemetry?.temperature?.value];
+
+    const total = Math.max(strainSamples.length, vibrationSamples.length, temperatureSamples.length);
+    if (total < 2) {
+      return [];
+    }
+    const normalizeSample = (samples, index) => Number(samples[Math.min(samples.length - 1, index)] ?? 0);
+    return Array.from({ length: total }, (_, index) => {
+      const strain = normalizeSample(strainSamples, index);
+      const vibration = normalizeSample(vibrationSamples, index);
+      const temperature = normalizeSample(temperatureSamples, index);
+      const stress = 0.45 * strain + 0.35 * vibration + 0.2 * ((temperature - 20) / 20);
+      return {
+        x: -48 + (48 * index) / Math.max(1, total - 1),
+        y: clamp01(stress / 12),
+      };
+    });
+  })();
+
+  const firebaseForecastSeries = (() => {
+    if (!firebaseNode || !firebaseHistorySeries.length) {
+      return [];
+    }
+    const base = clamp01(firebaseNode.failureProbability72h ?? firebaseHistorySeries[firebaseHistorySeries.length - 1].y);
+    return Array.from({ length: 13 }, (_, idx) => {
+      const hour = idx * 6;
+      const progress = hour / 72;
+      const wave = 0.06 * Math.sin((2 * Math.PI * progress) + 0.8);
+      const trend = 0.11 * progress;
+      return { x: hour, y: clamp01(base - 0.06 + wave + trend) };
+    });
+  })();
 
   const history = Array.isArray(lstmModel.history) ? lstmModel.history : [];
   const forecast = Array.isArray(lstmModel.forecastPoints) ? lstmModel.forecastPoints : [];
 
   const recentHistory = history.slice(-192);
-  const historySeries = recentHistory.map((point, index) => {
+  const pythonHistorySeries = recentHistory.map((point, index) => {
     const stress = 0.45 * point.strain + 0.35 * point.vibration + 0.2 * ((point.temperature - 20) / 20);
-    return { x: -48 + (48 * index) / Math.max(1, recentHistory.length - 1), y: Math.max(0, Math.min(1, stress / 12)) };
+    return {
+      x: -48 + (48 * index) / Math.max(1, recentHistory.length - 1),
+      y: clamp01(stress / 12),
+    };
   });
-  const forecastSeries = forecast.map((point) => ({ x: point.hour, y: Math.max(0, Math.min(1, Number(point.probability))) }));
+  const pythonForecastSeries = forecast.map((point) => ({
+    x: point.hour,
+    y: clamp01(Number(point.probability)),
+  }));
+
+  const historySeries = firebaseHistorySeries.length ? firebaseHistorySeries : pythonHistorySeries;
+  const forecastSeries = firebaseForecastSeries.length ? firebaseForecastSeries : pythonForecastSeries;
+
+  if (!historySeries.length && !forecastSeries.length) {
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", String(width / 2));
+    text.setAttribute("y", String(height / 2));
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#94a3b8");
+    text.textContent = "LSTM/Firebase data unavailable";
+    svg.appendChild(text);
+    return;
+  }
 
   const x = (value) => padding.left + ((value + 48) / 120) * chartWidth;
   const y = (value) => padding.top + (1 - value) * chartHeight;
@@ -746,14 +841,13 @@ export function renderLstmOverviewChart(svg, lstmModel) {
   svg.appendChild(divider);
 
   const drawPath = (series, color, widthPx, dashArray = null) => {
-    if (!series.length) {
-      return;
-    }
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    const d = series
-      .map((point, idx) => `${idx === 0 ? "M" : "L"}${x(point.x)} ${y(point.y)}`)
-      .join(" ");
-    path.setAttribute("d", d);
+    if (series.length) {
+      const d = series
+        .map((point, idx) => `${idx === 0 ? "M" : "L"}${x(point.x)} ${y(point.y)}`)
+        .join(" ");
+      path.setAttribute("d", d);
+    }
     path.setAttribute("fill", "none");
     path.setAttribute("stroke", color);
     path.setAttribute("stroke-width", String(widthPx));
@@ -762,10 +856,24 @@ export function renderLstmOverviewChart(svg, lstmModel) {
       path.setAttribute("stroke-dasharray", dashArray);
     }
     svg.appendChild(path);
+    return path;
   };
 
-  drawPath(historySeries, "rgba(34,211,238,0.95)", 2.6);
-  drawPath(forecastSeries, "rgba(244,63,94,0.9)", 2.8, "7 5");
+  const historyPath = drawPath(historySeries, "rgba(34,211,238,0.95)", 2.6);
+  const forecastPath = drawPath(forecastSeries, "rgba(244,63,94,0.9)", 2.8, "7 5");
+
+  const nowCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  nowCircle.setAttribute("r", "5");
+  nowCircle.setAttribute("fill", "#22d3ee");
+  nowCircle.setAttribute("stroke", "#0b1222");
+  nowCircle.setAttribute("stroke-width", "2");
+  svg.appendChild(nowCircle);
+
+  const nowValueText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  nowValueText.setAttribute("fill", "#22d3ee");
+  nowValueText.setAttribute("font-size", "11");
+  nowValueText.setAttribute("font-weight", "700");
+  svg.appendChild(nowValueText);
 
   const labels = [
     { value: -48, text: "-48h" },
@@ -785,4 +893,155 @@ export function renderLstmOverviewChart(svg, lstmModel) {
     text.textContent = label.text;
     svg.appendChild(text);
   });
+
+  const buildPathData = (series) => series
+    .map((point, idx) => `${idx === 0 ? "M" : "L"}${x(point.x)} ${y(point.y)}`)
+    .join(" ");
+
+  const toAnimatedSeries = (series, phase, magnitude) => series.map((point, index) => ({
+    x: point.x,
+    y: clamp01(point.y + (magnitude * Math.sin(phase + (index * 0.16) + (point.x * 0.025)))),
+  }));
+  const interpolateSeries = (series, xValue) => {
+    if (!series.length) {
+      return null;
+    }
+    if (xValue <= series[0].x) {
+      return series[0].y;
+    }
+    if (xValue >= series[series.length - 1].x) {
+      return series[series.length - 1].y;
+    }
+    for (let i = 0; i < series.length - 1; i += 1) {
+      const left = series[i];
+      const right = series[i + 1];
+      if (xValue >= left.x && xValue <= right.x) {
+        const span = Math.max(1e-6, right.x - left.x);
+        const ratio = (xValue - left.x) / span;
+        return left.y + ((right.y - left.y) * ratio);
+      }
+    }
+    return series[series.length - 1].y;
+  };
+  const xToDomain = (pixelX) => -48 + (((pixelX - padding.left) / chartWidth) * 120);
+
+  const hoverGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  hoverGroup.setAttribute("visibility", "hidden");
+  const hoverLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  hoverLine.setAttribute("y1", String(padding.top));
+  hoverLine.setAttribute("y2", String(height - padding.bottom));
+  hoverLine.setAttribute("stroke", "rgba(148,163,184,0.6)");
+  hoverLine.setAttribute("stroke-width", "1.5");
+  hoverLine.setAttribute("stroke-dasharray", "4 4");
+  const hoverPoint = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  hoverPoint.setAttribute("r", "4.5");
+  hoverPoint.setAttribute("fill", "#22d3ee");
+  hoverPoint.setAttribute("stroke", "#0b1222");
+  hoverPoint.setAttribute("stroke-width", "2");
+  const hoverBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  hoverBg.setAttribute("rx", "6");
+  hoverBg.setAttribute("ry", "6");
+  hoverBg.setAttribute("fill", "rgba(2,6,23,0.93)");
+  hoverBg.setAttribute("stroke", "rgba(34,211,238,0.45)");
+  hoverBg.setAttribute("stroke-width", "1");
+  const hoverText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  hoverText.setAttribute("fill", "#e2e8f0");
+  hoverText.setAttribute("font-size", "11");
+  hoverText.setAttribute("font-weight", "700");
+  hoverText.setAttribute("dominant-baseline", "middle");
+  hoverGroup.appendChild(hoverLine);
+  hoverGroup.appendChild(hoverPoint);
+  hoverGroup.appendChild(hoverBg);
+  hoverGroup.appendChild(hoverText);
+  svg.appendChild(hoverGroup);
+
+  let animatedHistory = historySeries;
+  let animatedForecast = forecastSeries;
+  let hoverClientX = null;
+  let frameId = null;
+
+  const updateHover = () => {
+    if (hoverClientX == null) {
+      hoverGroup.setAttribute("visibility", "hidden");
+      return;
+    }
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) {
+      hoverGroup.setAttribute("visibility", "hidden");
+      return;
+    }
+
+    const localX = ((hoverClientX - rect.left) / rect.width) * width;
+    const clampedX = Math.max(padding.left, Math.min(width - padding.right, localX));
+    const domainX = xToDomain(clampedX);
+    const activeSeries = domainX <= 0
+      ? animatedHistory
+      : [{ x: 0, y: animatedHistory[animatedHistory.length - 1]?.y ?? 0 }, ...animatedForecast];
+    const value = interpolateSeries(activeSeries, domainX);
+    if (value == null) {
+      hoverGroup.setAttribute("visibility", "hidden");
+      return;
+    }
+
+    const valueY = y(value);
+    hoverLine.setAttribute("x1", String(clampedX));
+    hoverLine.setAttribute("x2", String(clampedX));
+    hoverPoint.setAttribute("cx", String(clampedX));
+    hoverPoint.setAttribute("cy", String(valueY));
+
+    const label = `${domainX >= 0 ? `+${domainX.toFixed(1)}` : domainX.toFixed(1)}h  |  ${(value * 100).toFixed(1)}%`;
+    hoverText.textContent = label;
+    const tooltipWidth = Math.max(76, hoverText.getComputedTextLength() + 12);
+    const tooltipHeight = 24;
+    const tooltipX = Math.min(width - padding.right - tooltipWidth, Math.max(padding.left, clampedX + 10));
+    const tooltipY = Math.max(padding.top, valueY - 30);
+    hoverBg.setAttribute("x", String(tooltipX));
+    hoverBg.setAttribute("y", String(tooltipY));
+    hoverBg.setAttribute("width", String(tooltipWidth));
+    hoverBg.setAttribute("height", String(tooltipHeight));
+    hoverText.setAttribute("x", String(tooltipX + 6));
+    hoverText.setAttribute("y", String(tooltipY + (tooltipHeight / 2)));
+    hoverGroup.setAttribute("visibility", "visible");
+  };
+
+  const animate = (nowMs) => {
+    const phase = nowMs * 0.0022;
+    animatedHistory = toAnimatedSeries(historySeries, phase, 0.012);
+    animatedForecast = toAnimatedSeries(forecastSeries, phase + 0.9, 0.009);
+
+    if (historyPath) {
+      historyPath.setAttribute("d", buildPathData(animatedHistory));
+    }
+    if (forecastPath && animatedForecast.length) {
+      forecastPath.setAttribute("d", buildPathData(animatedForecast));
+    }
+
+    const nowValue = animatedHistory[animatedHistory.length - 1]?.y ?? 0;
+    const nowX = x(0);
+    const nowY = y(nowValue);
+    nowCircle.setAttribute("cx", String(nowX));
+    nowCircle.setAttribute("cy", String(nowY));
+    nowCircle.setAttribute("r", String(4.2 + (0.9 * (1 + Math.sin(phase * 1.6)))));
+
+    nowValueText.textContent = `${(nowValue * 100).toFixed(1)}% live`;
+    nowValueText.setAttribute("x", String(nowX + 10));
+    nowValueText.setAttribute("y", String(nowY - 10));
+
+    updateHover();
+    frameId = requestAnimationFrame(animate);
+    lstmAnimationRegistry.set(svg, { frameId });
+  };
+
+  svg.style.cursor = "crosshair";
+  svg.onmousemove = (event) => {
+    hoverClientX = event.clientX;
+    updateHover();
+  };
+  svg.onmouseleave = () => {
+    hoverClientX = null;
+    hoverGroup.setAttribute("visibility", "hidden");
+  };
+
+  frameId = requestAnimationFrame(animate);
+  lstmAnimationRegistry.set(svg, { frameId });
 }

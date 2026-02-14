@@ -256,7 +256,7 @@ export function renderOverviewKpis(overviewModel) {
   }
 }
 
-function renderOverviewLstmPanel(lstmOverviewModel) {
+function renderOverviewLstmPanel(lstmOverviewModel, nodesModel, selectedAssetId, selectedNodeId) {
   setText("overview-lstm-asset", lstmOverviewModel?.assetId || "-");
   setText(
     "overview-lstm-current-risk",
@@ -272,7 +272,10 @@ function renderOverviewLstmPanel(lstmOverviewModel) {
     "overview-lstm-last-update",
     lstmOverviewModel?.available ? formatIso(lstmOverviewModel.generatedAt) : "-",
   );
-  renderLstmOverviewChart(byId("overview-lstm-chart"), lstmOverviewModel);
+  renderLstmOverviewChart(byId("overview-lstm-chart"), lstmOverviewModel, nodesModel, {
+    selectedAssetId,
+    selectedNodeId,
+  });
 }
 
 export function renderTriageList(overviewModel, selectedAssetId, onSelectAsset) {
@@ -410,7 +413,12 @@ export function renderDashboard(viewModel, options = {}) {
     `${DASHBOARD_CONFIG.weather.windKmh}KM/H ${DASHBOARD_CONFIG.weather.windDirection}`,
   );
   renderOverviewKpis(viewModel.overviewModel);
-  renderOverviewLstmPanel(viewModel.lstmOverviewModel);
+  renderOverviewLstmPanel(
+    viewModel.lstmOverviewModel,
+    viewModel.nodesModel,
+    viewModel.selectedAssetId,
+    selectedNodeId,
+  );
   renderTriageList(viewModel.overviewModel, viewModel.selectedAssetId, onSelectAsset);
   renderSelectedAssetHeader(viewModel.assetDetailModel);
   renderSelectedAssetPanels(viewModel.assetDetailModel);

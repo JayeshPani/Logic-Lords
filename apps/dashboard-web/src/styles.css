@@ -681,6 +681,30 @@ textarea {
   gap: 10px;
 }
 
+.overview-lstm-kpis .summary-item {
+  min-width: 0;
+}
+
+.overview-lstm-kpis .summary-value {
+  font-size: clamp(18px, 1.6vw, 36px);
+  line-height: 1.2;
+}
+
+#overview-lstm-asset,
+#overview-lstm-model,
+#overview-lstm-last-update {
+  display: block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#overview-lstm-model,
+#overview-lstm-last-update {
+  font-size: clamp(15px, 1.25vw, 30px);
+}
+
 #overview-lstm-chart {
   width: 100%;
   min-height: 260px;
