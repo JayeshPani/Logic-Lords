@@ -66,6 +66,25 @@ def test_record_creates_submitted_verification() -> None:
     assert fetch.json()["verification_id"] == verification["verification_id"]
 
 
+def test_record_live_mode_without_private_key_returns_failed_status() -> None:
+    client = TestClient(app)
+
+    previous_mode = _engine._settings.tx_mode
+    previous_key = _engine._settings.signer_private_key
+    _engine._settings.tx_mode = "live"
+    _engine._settings.signer_private_key = None
+    try:
+        response = client.post("/record", json=_command())
+    finally:
+        _engine._settings.tx_mode = previous_mode
+        _engine._settings.signer_private_key = previous_key
+
+    assert response.status_code == 200
+    verification = response.json()["verification"]
+    assert verification["verification_status"] == "failed"
+    assert verification["failure_reason"]
+
+
 def test_track_progresses_to_confirmed_and_emits_event() -> None:
     client = TestClient(app)
     assert client.post("/record", json=_command()).status_code == 200

@@ -25,11 +25,12 @@ retry_policy:
 steps:
   - action: compile_recent_sensor_window
   - action: create_inspection_ticket
-  - action: notify_field_team
+  - action: notify_management_authority
   - action: schedule_follow_up_monitoring
 
 outputs:
   commands:
     - inspection.create
+    - notification.dispatch
   events:
     - inspection.requested

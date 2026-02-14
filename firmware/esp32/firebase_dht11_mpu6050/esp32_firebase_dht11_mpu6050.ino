@@ -1,9 +1,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <Wire.h>
 #include <DHT.h>
-#include <MPU6050.h>
 #include <time.h>
 
 // -----------------------------
@@ -12,22 +10,32 @@
 static const char* WIFI_SSID = "YOUR_WIFI_SSID";
 static const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-static const char* FIREBASE_DB_URL = "https://<project-id>-default-rtdb.firebaseio.com";
+static const char* FIREBASE_DB_URL = "https://infraguard-8cb5b-default-rtdb.asia-southeast1.firebasedatabase.app";
 static const char* FIREBASE_AUTH_TOKEN = ""; // optional, leave empty if rules allow writes
 static const char* FIREBASE_PREFIX = "infraguard";
 static const char* ASSET_ID = "asset_w12_bridge_0042";
 static const char* DEVICE_ID = "esp32-node-01";
-static const char* FIRMWARE_VERSION = "1.0.0";
+static const char* FIRMWARE_VERSION = "1.1.0-adxl335";
 
-static const int DHT_PIN = 4;
+static const int DHT_PIN = 15;
 static const int DHT_TYPE = DHT11;
+static const int X_PIN = 34;
+static const int Y_PIN = 35;
+static const int Z_PIN = 32;
 static const unsigned long PUSH_INTERVAL_MS = 5000;
+
+// ADXL335 defaults at 3.3V.
+// Keep board still and tune these if values drift heavily.
+static const float ADXL_SENSITIVITY_V_PER_G = 0.330f;
+static const float ADXL_ZERO_G_X_V = 1.65f;
+static const float ADXL_ZERO_G_Y_V = 1.65f;
+static const float ADXL_ZERO_G_Z_V = 1.65f;
+static const int ADXL_SAMPLE_COUNT = 10;
 
 // -----------------------------
 // Globals
 // -----------------------------
 DHT dht(DHT_PIN, DHT_TYPE);
-MPU6050 mpu;
 unsigned long lastPushAt = 0;
 
 static String iso8601NowUtc() {
@@ -91,13 +99,49 @@ static bool firebaseWrite(const String& method, const String& path, const String
   return true;
 }
 
+static void ensureWiFiConnected() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  Serial.print("[WiFi] Reconnecting");
+  WiFi.disconnect();
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  const unsigned long startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - startedAt) < 15000) {
+    Serial.print(".");
+    delay(350);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WiFi] Reconnected. IP: %s\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("\n[WiFi] Reconnect failed.");
+  }
+}
+
+static float readAdxlAxisG(int pin, float zeroGVoltage) {
+  long totalMilliVolts = 0;
+  for (int i = 0; i < ADXL_SAMPLE_COUNT; i++) {
+    totalMilliVolts += analogReadMilliVolts(pin);
+    delay(2);
+  }
+
+  const float meanVoltage = (totalMilliVolts / static_cast<float>(ADXL_SAMPLE_COUNT)) / 1000.0f;
+  return (meanVoltage - zeroGVoltage) / ADXL_SENSITIVITY_V_PER_G;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(300);
 
-  Wire.begin();
   dht.begin();
-  mpu.initialize();
+
+  analogReadResolution(12);
+  analogSetPinAttenuation(X_PIN, ADC_11db);
+  analogSetPinAttenuation(Y_PIN, ADC_11db);
+  analogSetPinAttenuation(Z_PIN, ADC_11db);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -120,6 +164,11 @@ void loop() {
   }
   lastPushAt = nowMs;
 
+  ensureWiFiConnected();
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
 
@@ -128,11 +177,9 @@ void loop() {
     return;
   }
 
-  int16_t axRaw, ayRaw, azRaw;
-  mpu.getAcceleration(&axRaw, &ayRaw, &azRaw);
-  float ax = static_cast<float>(axRaw) / 16384.0f;
-  float ay = static_cast<float>(ayRaw) / 16384.0f;
-  float az = static_cast<float>(azRaw) / 16384.0f;
+  const float ax = readAdxlAxisG(X_PIN, ADXL_ZERO_G_X_V);
+  const float ay = readAdxlAxisG(Y_PIN, ADXL_ZERO_G_Y_V);
+  const float az = readAdxlAxisG(Z_PIN, ADXL_ZERO_G_Z_V);
 
   String capturedAt = iso8601NowUtc();
 
@@ -167,5 +214,7 @@ void loop() {
       ay,
       az
     );
+  } else {
+    Serial.println("[Telemetry] Firebase push failed.");
   }
 }

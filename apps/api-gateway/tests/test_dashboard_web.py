@@ -21,7 +21,15 @@ def test_dashboard_page_served() -> None:
     assert "triage-list" in response.text
     assert "selected-asset-title" in response.text
     assert "verify-chain-btn" in response.text
+    assert "track-verification-btn" in response.text
     assert "risk-map-status" in response.text
+    assert "Automation" in response.text
+    assert "automation-incident-list" in response.text
+    assert "maintenance-evidence-panel" in response.text
+    assert "evidence-file-input" in response.text
+    assert "evidence-upload-btn" in response.text
+    assert "submit-verification-btn" in response.text
+    assert "evidence-list-body" in response.text
 
 
 def test_dashboard_static_assets_served() -> None:

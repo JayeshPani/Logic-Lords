@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
 from typing import Any
@@ -39,6 +39,20 @@ class WorkflowRecord:
     last_error: str | None = None
     inspection_ticket_id: str | None = None
     maintenance_id: str | None = None
+    escalation_stage: str | None = None
+    authority_notified_at: datetime | None = None
+    authority_ack_deadline_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    acknowledged_by: str | None = None
+    ack_notes: str | None = None
+    police_notified_at: datetime | None = None
+    management_dispatch_ids: list[str] = field(default_factory=list)
+    police_dispatch_ids: list[str] = field(default_factory=list)
+    verification_status: str | None = None
+    verification_maintenance_id: str | None = None
+    verification_tx_hash: str | None = None
+    verification_error: str | None = None
+    verification_updated_at: datetime | None = None
     inspection_create_command: dict[str, Any] | None = None
     inspection_requested_event: dict[str, Any] | None = None
     maintenance_completed_event: dict[str, Any] | None = None
@@ -103,6 +117,13 @@ class InMemoryOrchestrationStore:
         with self._lock:
             return self._workflows.get(workflow_id)
 
+    def get_workflow_by_maintenance_id(self, maintenance_id: str) -> WorkflowRecord | None:
+        with self._lock:
+            for workflow in self._workflows.values():
+                if workflow.maintenance_id == maintenance_id:
+                    return workflow
+        return None
+
     def list_workflows(self, *, asset_id: str | None = None, status: str | None = None) -> list[WorkflowRecord]:
         with self._lock:
             records = list(self._workflows.values())
@@ -155,6 +176,87 @@ class InMemoryOrchestrationStore:
             workflow.last_error = error
             workflow.updated_at = updated_at
 
+    def mark_management_notified(
+        self,
+        workflow_id: str,
+        *,
+        notified_at: datetime,
+        ack_deadline_at: datetime,
+        dispatch_ids: list[str],
+        updated_at: datetime,
+    ) -> None:
+        with self._lock:
+            workflow = self._workflows.get(workflow_id)
+            if workflow is None:
+                return
+            workflow.escalation_stage = "management_notified"
+            workflow.authority_notified_at = notified_at
+            workflow.authority_ack_deadline_at = ack_deadline_at
+            workflow.management_dispatch_ids = list(dispatch_ids)
+            workflow.updated_at = updated_at
+
+    def acknowledge(
+        self,
+        workflow_id: str,
+        *,
+        acknowledged_at: datetime,
+        acknowledged_by: str,
+        ack_notes: str | None,
+    ) -> WorkflowRecord | None:
+        with self._lock:
+            workflow = self._workflows.get(workflow_id)
+            if workflow is None:
+                return None
+
+            if workflow.acknowledged_at is None:
+                workflow.acknowledged_at = acknowledged_at
+            if workflow.acknowledged_by is None:
+                workflow.acknowledged_by = acknowledged_by
+            if ack_notes and workflow.ack_notes is None:
+                workflow.ack_notes = ack_notes
+
+            if workflow.escalation_stage not in {"police_notified", "maintenance_completed"}:
+                workflow.escalation_stage = "acknowledged"
+
+            workflow.updated_at = acknowledged_at
+            return workflow
+
+    def mark_police_notified(
+        self,
+        workflow_id: str,
+        *,
+        notified_at: datetime,
+        dispatch_ids: list[str],
+        updated_at: datetime,
+    ) -> bool:
+        with self._lock:
+            workflow = self._workflows.get(workflow_id)
+            if workflow is None:
+                return False
+            if workflow.escalation_stage in {"police_notified", "maintenance_completed"}:
+                return False
+
+            workflow.escalation_stage = "police_notified"
+            workflow.police_notified_at = notified_at
+            workflow.police_dispatch_ids = list(dispatch_ids)
+            workflow.updated_at = updated_at
+            return True
+
+    def list_ack_timeout_candidates(self, now: datetime) -> list[WorkflowRecord]:
+        with self._lock:
+            records = list(self._workflows.values())
+
+        return [
+            record
+            for record in records
+            if record.status == "inspection_requested"
+            and record.escalation_stage == "management_notified"
+            and record.authority_ack_deadline_at is not None
+            and record.authority_ack_deadline_at <= now
+            and record.acknowledged_at is None
+            and record.police_notified_at is None
+        ]
+
     def mark_maintenance_completed(
         self,
         workflow_id: str,
@@ -168,8 +270,30 @@ class InMemoryOrchestrationStore:
             if workflow is None:
                 return
             workflow.status = "maintenance_completed"
+            workflow.escalation_stage = "maintenance_completed"
             workflow.maintenance_id = maintenance_id
             workflow.maintenance_completed_event = event
+            workflow.updated_at = updated_at
+
+    def mark_verification_result(
+        self,
+        workflow_id: str,
+        *,
+        verification_status: str,
+        verification_maintenance_id: str | None,
+        verification_tx_hash: str | None,
+        verification_error: str | None,
+        updated_at: datetime,
+    ) -> None:
+        with self._lock:
+            workflow = self._workflows.get(workflow_id)
+            if workflow is None:
+                return
+            workflow.verification_status = verification_status
+            workflow.verification_maintenance_id = verification_maintenance_id
+            workflow.verification_tx_hash = verification_tx_hash
+            workflow.verification_error = verification_error
+            workflow.verification_updated_at = updated_at
             workflow.updated_at = updated_at
 
     def next_ticket_id(self, now: datetime) -> str:

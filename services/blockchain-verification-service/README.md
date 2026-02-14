@@ -5,7 +5,7 @@ Anchors maintenance evidence hashes and tracks transaction confirmation state.
 ## Responsibilities
 
 - Consume `verification.record.blockchain` command payloads.
-- Submit deterministic transaction hash records for evidence anchors.
+- Submit deterministic records by default, with optional live Sepolia writes in `live` tx mode.
 - Track confirmation progress until verified.
 - Emit `maintenance.verified.blockchain` event payload when confirmed.
 - Expose verification query APIs.
@@ -39,6 +39,11 @@ python3 -m uvicorn src.main:app --reload --port 8105
 - `BLOCKCHAIN_VERIFICATION_SEPOLIA_CHAIN_ID` (default: `11155111`)
 - `BLOCKCHAIN_VERIFICATION_SEPOLIA_CONTRACT_ADDRESS` (optional contract probe target)
 - `BLOCKCHAIN_VERIFICATION_SEPOLIA_RPC_TIMEOUT_SECONDS` (default: `6.0`)
+- `BLOCKCHAIN_VERIFICATION_TX_MODE` (`deterministic` or `live`, default: `deterministic`)
+- `BLOCKCHAIN_VERIFICATION_SIGNER_PRIVATE_KEY` (required in `live`)
+- `BLOCKCHAIN_VERIFICATION_GAS_LIMIT` (default: `250000`)
+- `BLOCKCHAIN_VERIFICATION_MAX_GAS_GWEI` (default: `30`)
+- `BLOCKCHAIN_VERIFICATION_TRACK_INTERVAL_SECONDS` (default: `20`)
 
 ## Module-12 Validation
 
@@ -48,7 +53,7 @@ make module12-check
 
 ## Notes
 
-- Transaction hashes are deterministic per verification command payload and command ID.
+- Deterministic mode derives tx hash from command payload; live mode signs tx with service wallet.
 - Confirmation tracking is explicit via `/verifications/{maintenance_id}/track` to model polling behavior.
 - Runtime state is in-memory for local development and contract validation.
 - Sepolia is the only supported network for live connect checks; Hardhat is not used.

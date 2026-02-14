@@ -15,7 +15,26 @@ from notification_service.observability import get_metrics  # noqa: E402
 from notification_service.routes import _engine  # noqa: E402
 
 
-def _command(*, channel: str = "email", severity: str = "warning") -> dict:
+def _command(
+    *,
+    channel: str = "email",
+    severity: str = "warning",
+    fallback_channels: list[str] | None = None,
+) -> dict:
+    payload: dict[str, object] = {
+        "channel": channel,
+        "recipient": "field-team@infraguard.city",
+        "message": "Bridge segment risk crossed threshold",
+        "severity": severity,
+        "context": {
+            "asset_id": "asset_w12_bridge_0042",
+            "risk_level": "High",
+            "ticket_id": "insp_20260214_0009",
+        },
+    }
+    if fallback_channels is not None:
+        payload["fallback_channels"] = fallback_channels
+
     return {
         "command_id": str(uuid4()),
         "command_type": "notification.dispatch",
@@ -23,17 +42,7 @@ def _command(*, channel: str = "email", severity: str = "warning") -> dict:
         "requested_at": "2026-02-14T04:00:00+00:00",
         "requested_by": "apps/orchestration-service",
         "trace_id": "trace-notification-12345",
-        "payload": {
-            "channel": channel,
-            "recipient": "field-team@infraguard.city",
-            "message": "Bridge segment risk crossed threshold",
-            "severity": severity,
-            "context": {
-                "asset_id": "asset_w12_bridge_0042",
-                "risk_level": "High",
-                "ticket_id": "insp_20260214_0009",
-            },
-        },
+        "payload": payload,
     }
 
 
@@ -108,6 +117,34 @@ def test_dispatch_falls_back_to_secondary_channel() -> None:
     assert body["dispatch"]["fallback_used"] is True
     assert body["dispatch"]["attempts_total"] == 4
     assert body["dispatch"]["retries_used"] == 2
+
+
+def test_dispatch_uses_payload_fallback_order() -> None:
+    client = TestClient(app)
+
+    def fail_sms_dispatcher(
+        recipient: str,
+        message: str,
+        attempt: int,
+        context: dict | None,
+    ) -> tuple[bool, str | None]:
+        del recipient, message, attempt, context
+        return False, "sms gateway unavailable"
+
+    _engine.set_channel_dispatcher_for_tests("sms", fail_sms_dispatcher)
+
+    response = client.post(
+        "/dispatch",
+        json=_command(channel="sms", severity="critical", fallback_channels=["webhook", "email"]),
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["dispatch"]["status"] == "delivered"
+    assert body["dispatch"]["primary_channel"] == "sms"
+    assert body["dispatch"]["final_channel"] == "webhook"
+    assert body["dispatch"]["fallback_used"] is True
+    assert body["dispatch"]["channels_tried"][:2] == ["sms", "webhook"]
 
 
 def test_dispatch_fails_after_all_channels_and_retries_exhausted() -> None:

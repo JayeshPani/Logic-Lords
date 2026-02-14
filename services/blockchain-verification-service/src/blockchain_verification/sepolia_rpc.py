@@ -33,6 +33,28 @@ class SepoliaRpcClient:
         normalized = raw.lower()
         return normalized not in {"0x", "0x0", "0x00"}
 
+    def get_transaction_count(self, address: str, block_tag: str = "pending") -> int:
+        raw = self._call("eth_getTransactionCount", [address, block_tag])
+        return _parse_hex_int(raw, field_name="transaction_count")
+
+    def get_gas_price_wei(self) -> int:
+        raw = self._call("eth_gasPrice", [])
+        return _parse_hex_int(raw, field_name="gas_price")
+
+    def send_raw_transaction(self, raw_transaction_hex: str) -> str:
+        raw = self._call("eth_sendRawTransaction", [raw_transaction_hex])
+        if not isinstance(raw, str) or not raw.startswith("0x") or len(raw) != 66:
+            raise SepoliaRpcError("invalid_tx_hash_response")
+        return raw
+
+    def get_transaction_receipt(self, tx_hash: str) -> dict[str, object] | None:
+        raw = self._call("eth_getTransactionReceipt", [tx_hash])
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise SepoliaRpcError("invalid_transaction_receipt_response")
+        return raw
+
     def _call(self, method: str, params: list[object]) -> object:
         payload = {
             "jsonrpc": "2.0",

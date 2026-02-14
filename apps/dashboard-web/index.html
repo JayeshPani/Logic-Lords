@@ -41,6 +41,10 @@
             <iconify-icon icon="lucide:database-zap"></iconify-icon>
             <span>Ledger</span>
           </button>
+          <button class="nav-item tab-trigger" type="button" data-tab-target="automation" aria-selected="false">
+            <iconify-icon icon="lucide:shield-alert"></iconify-icon>
+            <span>Automation</span>
+          </button>
           <button class="nav-item tab-trigger" type="button" data-tab-target="map" aria-selected="false">
             <iconify-icon icon="lucide:map-pinned"></iconify-icon>
             <span>City Map</span>
@@ -105,6 +109,7 @@
           <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="triage" aria-selected="false">Triage</button>
           <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="asset" aria-selected="false">Asset Detail</button>
           <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="ledger" aria-selected="false">Ledger</button>
+          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="automation" aria-selected="false">Automation</button>
           <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="map" aria-selected="false">City Map</button>
           <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="maintenance" aria-selected="false">Maintenance</button>
         </div>
@@ -290,11 +295,16 @@
               <div class="ledger-grid">
                 <div class="ledger-card">
                   <div class="ledger-row"><span>Verification Status</span><span class="mono" id="ledger-status">-</span></div>
+                  <div class="ledger-row"><span>Maintenance ID</span><span class="mono" id="ledger-maintenance-id">-</span></div>
                   <div class="ledger-row"><span>Sepolia Link</span><span class="mono" id="ledger-connection">DISCONNECTED</span></div>
                   <div class="ledger-row"><span>Latest Block</span><span class="mono" id="ledger-latest-block">-</span></div>
                   <div class="ledger-row"><span>Network</span><span class="mono" id="ledger-network">-</span></div>
                   <div class="ledger-row"><span>Tx Hash</span><span class="mono hash" id="ledger-tx">-</span></div>
                   <div class="ledger-row"><span>Evidence Hash</span><span class="mono hash" id="ledger-evidence">-</span></div>
+                  <div class="ledger-row"><span>Confirmations</span><span class="mono" id="ledger-confirmations">0/0</span></div>
+                  <div class="ledger-row"><span>Submitted At</span><span class="mono" id="ledger-submitted-at">-</span></div>
+                  <div class="ledger-row"><span>Confirmed At</span><span class="mono" id="ledger-confirmed-at">-</span></div>
+                  <div class="ledger-row"><span>Failure Reason</span><span class="mono hash" id="ledger-failure-reason">-</span></div>
                   <div class="ledger-row"><span>Wallet Status</span><span class="mono" id="wallet-connection">DISCONNECTED</span></div>
                   <div class="ledger-row"><span>Wallet Address</span><span class="mono hash" id="wallet-address">-</span></div>
                   <div class="ledger-row"><span>Wallet Chain</span><span class="mono" id="wallet-chain">-</span></div>
@@ -305,6 +315,7 @@
                     Click connect to verify live Sepolia reachability.
                   </p>
                   <button id="verify-chain-btn" class="verify-btn" type="button">Connect Sepolia</button>
+                  <button id="track-verification-btn" class="verify-btn secondary-btn" type="button">Track Verification</button>
 
                   <p id="wallet-connect-message" class="connection-message" aria-live="polite">
                     Click connect wallet to bind operator identity via MetaMask.
@@ -314,6 +325,21 @@
                   <ul id="ledger-status-timeline" class="timeline" aria-label="Verification status timeline"></ul>
                 </div>
               </div>
+            </section>
+          </section>
+
+          <section class="tab-panel" id="tab-automation" data-tab-panel="automation" aria-label="Automation Incidents" hidden>
+            <section class="panel automation-panel card-gradient" aria-label="Safety escalation incidents">
+              <div class="panel-head-row">
+                <div>
+                  <h3>Safety Escalation Incidents</h3>
+                  <p class="panel-subtitle">Management notification -> 30m ACK SLA -> police escalation on timeout</p>
+                </div>
+              </div>
+              <div id="automation-status-message" class="map-status map-status-quiet" aria-live="polite">
+                Waiting for incident updates...
+              </div>
+              <div id="automation-incident-list" class="automation-incident-list" role="list"></div>
             </section>
           </section>
 
@@ -334,26 +360,86 @@
           </section>
 
           <section class="tab-panel" id="tab-maintenance" data-tab-panel="maintenance" aria-label="Maintenance Activity" hidden>
-            <article class="panel table-panel card-gradient">
-              <div class="panel-head-row table-head">
-                <h3>Maintenance Activity</h3>
-                <p class="panel-subtitle">Most recent actions for selected asset</p>
-              </div>
-              <div class="table-wrap custom-scrollbar">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Timestamp</th>
-                      <th>System Unit</th>
-                      <th>Operator</th>
-                      <th>Status</th>
-                      <th class="align-right">Validation</th>
-                    </tr>
-                  </thead>
-                  <tbody id="maintenance-log-body"></tbody>
-                </table>
-              </div>
-            </article>
+            <div class="maintenance-grid">
+              <article class="panel maintenance-evidence-panel card-gradient" id="maintenance-evidence-panel">
+                <div class="panel-head-row table-head">
+                  <div>
+                    <h3>Organization Evidence</h3>
+                    <p class="panel-subtitle">Upload maintenance proof, then submit verification.</p>
+                  </div>
+                </div>
+
+                <div class="evidence-meta">
+                  <div class="evidence-meta-row"><span>Maintenance ID</span><span class="mono" id="evidence-maintenance-id">-</span></div>
+                  <div class="evidence-meta-row"><span>Verification State</span><span class="mono" id="evidence-verification-status">-</span></div>
+                </div>
+
+                <div class="evidence-upload-controls">
+                  <div class="evidence-form-row">
+                    <label class="evidence-input-label" for="evidence-file-input">Evidence File</label>
+                    <input
+                      id="evidence-file-input"
+                      class="evidence-file-input"
+                      type="file"
+                      accept=".pdf,image/jpeg,image/png,image/webp,video/mp4"
+                    />
+                    <p class="panel-subtitle mono" id="evidence-file-selected">No file selected</p>
+                  </div>
+                  <div class="evidence-form-row">
+                    <label class="evidence-input-label" for="evidence-category">Category</label>
+                    <input id="evidence-category" class="evidence-text-input" type="text" maxlength="64" placeholder="inspection_report" />
+                  </div>
+                  <div class="evidence-form-row">
+                    <label class="evidence-input-label" for="evidence-notes">Notes</label>
+                    <textarea id="evidence-notes" class="evidence-textarea" maxlength="500" rows="2" placeholder="Optional notes for this upload"></textarea>
+                  </div>
+                  <div class="evidence-action-row">
+                    <button id="evidence-upload-btn" class="verify-btn" type="button">Upload & Finalize Evidence</button>
+                    <button id="submit-verification-btn" class="verify-btn secondary-btn" type="button">Submit Verification</button>
+                  </div>
+                </div>
+
+                <p id="evidence-status-message" class="map-status map-status-quiet" aria-live="polite">
+                  Upload at least one finalized evidence file to enable verification submit.
+                </p>
+
+                <div class="table-wrap custom-scrollbar evidence-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Evidence ID</th>
+                        <th>Filename</th>
+                        <th>Status</th>
+                        <th>SHA-256</th>
+                        <th class="align-right">Size</th>
+                      </tr>
+                    </thead>
+                    <tbody id="evidence-list-body"></tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article class="panel table-panel card-gradient">
+                <div class="panel-head-row table-head">
+                  <h3>Maintenance Activity</h3>
+                  <p class="panel-subtitle">Most recent actions for selected asset</p>
+                </div>
+                <div class="table-wrap custom-scrollbar">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Timestamp</th>
+                        <th>System Unit</th>
+                        <th>Operator</th>
+                        <th>Status</th>
+                        <th class="align-right">Validation</th>
+                      </tr>
+                    </thead>
+                    <tbody id="maintenance-log-body"></tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
           </section>
         </div>
       </main>

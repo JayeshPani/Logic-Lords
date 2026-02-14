@@ -16,8 +16,23 @@ class Settings(BaseSettings):
     blockchain_network: str = "sepolia"
     blockchain_contract_address: str = "0x1111111111111111111111111111111111111111"
     blockchain_chain_id: int = 11155111
+    firebase_storage_bucket: str = ""
+    firebase_project_id: str | None = None
+    firebase_credentials_json: str = ""
+    evidence_upload_url_ttl_seconds: int = 900
+    evidence_max_file_bytes: int = 20 * 1024 * 1024
+    evidence_allowed_mime_types_csv: str = "application/pdf,image/jpeg,image/png,image/webp,video/mp4"
 
     model_config = SettingsConfigDict(env_prefix="REPORT_GENERATION_", extra="ignore")
+
+    @property
+    def evidence_allowed_mime_types(self) -> tuple[str, ...]:
+        values = [value.strip().lower() for value in self.evidence_allowed_mime_types_csv.split(",")]
+        unique: list[str] = []
+        for value in values:
+            if value and value not in unique:
+                unique.append(value)
+        return tuple(unique)
 
 
 def get_settings() -> Settings:
