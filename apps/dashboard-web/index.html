@@ -85,29 +85,18 @@
               <div class="mono date" id="clock-date">-</div>
               <div class="mono time" id="clock-time">-</div>
             </div>
-            <button class="icon-btn" type="button" title="Notifications">
-              <iconify-icon icon="lucide:bell"></iconify-icon>
-            </button>
-            <div class="avatar-ring">
+            <button id="profile-btn" class="profile-btn avatar-ring" type="button" aria-label="Open account" aria-expanded="false" aria-controls="account-modal">
               <img
                 src="https://api.dicebear.com/7.x/avataaars/svg?seed=Admin"
                 alt="Admin profile"
                 class="avatar"
               />
-            </div>
+            </button>
+
           </div>
         </header>
 
         <p id="stale-badge" class="stale-badge" aria-live="polite"></p>
-
-        <div class="tabs-strip" role="tablist" aria-label="Dashboard Sections">
-          <button class="tab-trigger tab-trigger-pill tab-trigger-active" type="button" data-tab-target="overview" aria-selected="true">Overview</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="triage" aria-selected="false">Triage</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="asset" aria-selected="false">Asset Detail</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="ledger" aria-selected="false">Ledger</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="map" aria-selected="false">City Map</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="maintenance" aria-selected="false">Maintenance</button>
-        </div>
 
         <div class="tab-panels">
           <section class="tab-panel tab-panel-active" id="tab-overview" data-tab-panel="overview" aria-label="Overview">
@@ -269,13 +258,13 @@
                 <p class="panel-subtitle">Length encodes contribution to overall risk</p>
                 <div id="selected-asset-components" class="risk-bars"></div>
               </article>
-
-              <article class="panel forecast-panel card-gradient">
-                <h3>72h Failure Forecast</h3>
-                <p class="panel-subtitle">Bands show watch/warning/critical thresholds</p>
-                <svg id="selected-asset-forecast" viewBox="0 0 760 240" aria-label="72-hour failure forecast chart"></svg>
-              </article>
             </section>
+
+            <article class="panel forecast-panel forecast-panel-wide card-gradient">
+              <h3>72h Failure Forecast</h3>
+              <p class="panel-subtitle">Bands show watch/warning/critical thresholds</p>
+              <svg id="selected-asset-forecast" viewBox="0 0 1200 300" aria-label="72-hour failure forecast chart"></svg>
+            </article>
           </section>
 
           <section class="tab-panel" id="tab-ledger" data-tab-panel="ledger" aria-label="Ledger and Wallet" hidden>
@@ -358,5 +347,39 @@
         </div>
       </main>
     </div>
+
+    <section id="account-modal" class="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title" hidden>
+      <div class="account-modal-backdrop" data-account-close="true"></div>
+      <article class="account-card card-gradient">
+        <header class="account-head">
+          <div>
+            <h3 id="account-title">Operator Account</h3>
+            <p class="mono account-subtitle">METRO-NORTH_UNIT_04</p>
+          </div>
+          <button id="account-close-btn" class="icon-btn" type="button" title="Close account panel">
+            <iconify-icon icon="lucide:x"></iconify-icon>
+          </button>
+        </header>
+
+        <div class="account-body">
+          <div class="account-row"><span>Name</span><strong>Ops Admin</strong></div>
+          <div class="account-row"><span>Role</span><strong>Infrastructure Supervisor</strong></div>
+          <div class="account-row"><span>Region</span><strong>Metro North</strong></div>
+          <div class="account-row"><span>Wallet Status</span><strong id="account-wallet-status">Unknown</strong></div>
+          <div class="account-row"><span>Wallet Address</span><strong class="mono" id="account-wallet-address">-</strong></div>
+          <div class="account-row"><span>Wallet Chain</span><strong class="mono" id="account-wallet-chain">-</strong></div>
+          <div class="account-row"><span>Sepolia Reachability</span><strong id="account-chain-status">Unknown</strong></div>
+        </div>
+
+        <div class="profile-actions">
+          <button class="ghost-btn" type="button" data-nav-target="overview">Open Overview</button>
+          <button class="ghost-btn" type="button" data-nav-target="ledger">Open Ledger</button>
+          <button class="ghost-btn" type="button" data-nav-target="maintenance">Open Maintenance</button>
+          <button id="profile-refresh-btn" class="ghost-btn" type="button">Refresh Data</button>
+          <button id="profile-disconnect-wallet-btn" class="ghost-btn danger-ghost" type="button">Disconnect Wallet View</button>
+        </div>
+        <p id="profile-action-note" class="profile-note mono" aria-live="polite"></p>
+      </article>
+    </section>
   </body>
 </html>

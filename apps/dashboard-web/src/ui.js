@@ -169,7 +169,7 @@ export function renderTriageList(overviewModel, selectedAssetId, onSelectAsset) 
 
     button.addEventListener("click", () => {
       if (typeof onSelectAsset === "function") {
-        onSelectAsset(asset.assetId);
+        onSelectAsset(asset.assetId, { navigateToAssetDetail: true });
       }
     });
 

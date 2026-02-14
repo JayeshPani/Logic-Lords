@@ -306,6 +306,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
+  position: relative;
 }
 
 .clock-wrap {
@@ -347,11 +348,202 @@ textarea {
   padding: 1px;
 }
 
+.profile-btn {
+  display: block;
+  cursor: pointer;
+  background: transparent;
+}
+
+.profile-btn[aria-expanded="true"] {
+  box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.44);
+}
+
 .avatar {
   width: 100%;
   height: 100%;
   border-radius: 999px;
   background: var(--surface-1);
+}
+
+.header-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 280px;
+  border: 1px solid rgba(30, 41, 59, 0.9);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(2, 6, 23, 0.96);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.55);
+  z-index: 60;
+  display: grid;
+  gap: 10px;
+}
+
+.header-popover h4 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.notification-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.notification-list span {
+  color: var(--text-weak);
+}
+
+.notification-list strong {
+  color: var(--text-strong);
+  text-align: right;
+}
+
+.profile-head {
+  display: grid;
+  gap: 2px;
+}
+
+.profile-name {
+  color: var(--text-strong);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.profile-role {
+  color: var(--text-weak);
+  font-size: 11px;
+}
+
+.profile-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.ghost-btn {
+  border: 1px solid rgba(30, 41, 59, 0.86);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.74);
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.ghost-btn:hover {
+  border-color: rgba(0, 212, 255, 0.42);
+  background: rgba(15, 23, 42, 0.94);
+}
+
+.ghost-btn.danger-ghost {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(127, 29, 29, 0.25);
+}
+
+.ghost-btn.danger-ghost:hover {
+  border-color: rgba(248, 113, 113, 0.6);
+}
+
+.profile-note {
+  min-height: 14px;
+  font-size: 11px;
+  color: var(--text-weak);
+}
+
+.account-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: grid;
+  place-items: center;
+}
+
+.account-modal[hidden] {
+  display: none !important;
+}
+
+.account-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.account-card {
+  position: relative;
+  width: min(520px, calc(100vw - 28px));
+  border: 1px solid rgba(30, 41, 59, 0.9);
+  border-radius: 18px;
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+  z-index: 1;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.account-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.account-head h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 20px;
+}
+
+.account-subtitle {
+  margin-top: 4px;
+  color: var(--text-weak);
+  font-size: 11px;
+}
+
+.account-body {
+  border: 1px solid rgba(30, 41, 59, 0.82);
+  border-radius: 12px;
+  background: rgba(11, 18, 34, 0.72);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.account-row span {
+  color: var(--text-weak);
+}
+
+.account-row strong {
+  color: var(--text-strong);
+  text-align: right;
 }
 
 .stale-badge {
@@ -375,7 +567,13 @@ textarea {
   align-items: center;
   gap: 8px;
   overflow: auto;
-  padding-bottom: 2px;
+  padding-bottom: 8px;
+  position: sticky;
+  top: 72px;
+  z-index: 22;
+  background: rgba(2, 6, 23, 0.84);
+  backdrop-filter: blur(10px);
+  padding-top: 10px;
 }
 
 .tab-trigger {
@@ -393,12 +591,17 @@ textarea {
 }
 
 .tab-trigger-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   white-space: nowrap;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 8px 12px;
+  min-height: 42px;
+  padding: 10px 16px;
 }
 
 .tab-trigger-active {
@@ -853,6 +1056,14 @@ textarea {
   background: rgba(11, 18, 34, 0.78);
 }
 
+.forecast-panel-wide {
+  min-height: 420px;
+}
+
+.forecast-panel-wide svg {
+  min-height: 320px;
+}
+
 .ledger-panel {
   display: grid;
   gap: 14px;
@@ -1238,11 +1449,27 @@ tbody tr:hover {
     gap: 8px;
   }
 
+  .tabs-strip {
+    top: 0;
+  }
+
   .header-left,
   .header-right,
   .weather-pill,
   .command-center {
     width: 100%;
+  }
+
+  .header-popover {
+    right: 0;
+    left: 0;
+    min-width: 0;
+  }
+
+  .account-card {
+    width: calc(100vw - 16px);
+    border-radius: 14px;
+    padding: 12px;
   }
 
   .ops-kpi-grid,
