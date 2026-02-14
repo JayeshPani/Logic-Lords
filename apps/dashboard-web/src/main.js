@@ -2,22 +2,132 @@ import { DASHBOARD_CONFIG } from "./config.js";
 import { connectToSepolia, loadDashboardData } from "./api.js";
 import { createViewModel } from "./state.js";
 import { connectMetaMaskWallet } from "./wallet.js";
-import { renderBlockchainConnectionStatus, renderClock, renderDashboard, renderWalletConnectionStatus } from "./ui.js";
+import { renderClock, renderDashboard } from "./ui.js";
 
 let refreshHandle = null;
+let refreshInFlight = false;
+
+let lastPayload = null;
 let lastBlockchainConnection = null;
 let lastWalletConnection = null;
+let selectedAssetId = null;
+let activeTabTarget = "overview";
+
+function setupSectionTabs(onTabChange) {
+  const triggers = Array.from(document.querySelectorAll(".tab-trigger"));
+  const panels = Array.from(document.querySelectorAll(".tab-panel"));
+  if (!triggers.length || !panels.length) {
+    return;
+  }
+
+  const availableTargets = new Set(
+    panels.map((panel) => panel.getAttribute("data-tab-panel")).filter(Boolean),
+  );
+
+  let activeTarget = "overview";
+  try {
+    const saved = window.localStorage.getItem("infraguard.activeTab");
+    if (saved && availableTargets.has(saved)) {
+      activeTarget = saved;
+    }
+  } catch (_error) {
+    // Ignore localStorage access failures and continue with default.
+  }
+
+  const activateTab = (target) => {
+    if (!availableTargets.has(target)) {
+      return;
+    }
+
+    panels.forEach((panel) => {
+      const isActive = panel.getAttribute("data-tab-panel") === target;
+      panel.hidden = !isActive;
+      panel.classList.toggle("tab-panel-active", isActive);
+    });
+
+    triggers.forEach((trigger) => {
+      const isActive = trigger.getAttribute("data-tab-target") === target;
+      trigger.classList.toggle("nav-item-active", isActive);
+      trigger.classList.toggle("tab-trigger-active", isActive);
+      trigger.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    activeTarget = target;
+    activeTabTarget = target;
+    try {
+      window.localStorage.setItem("infraguard.activeTab", target);
+    } catch (_error) {
+      // Ignore localStorage access failures.
+    }
+
+    if (typeof onTabChange === "function") {
+      onTabChange(target);
+    }
+  };
+
+  triggers.forEach((trigger) => {
+    trigger.addEventListener("click", () => {
+      const target = trigger.getAttribute("data-tab-target");
+      if (target) {
+        activateTab(target);
+      }
+    });
+  });
+
+  activateTab(activeTarget);
+}
+
+function buildRenderablePayload(basePayload) {
+  if (!basePayload) {
+    return null;
+  }
+
+  return {
+    ...basePayload,
+    blockchainConnection: lastBlockchainConnection || basePayload.blockchainConnection,
+    walletConnection: lastWalletConnection || basePayload.walletConnection,
+  };
+}
+
+function renderCurrent() {
+  const payload = buildRenderablePayload(lastPayload);
+  if (!payload) {
+    return;
+  }
+
+  const viewModel = createViewModel(payload, { selectedAssetId });
+  selectedAssetId = viewModel.selectedAssetId;
+
+  renderDashboard(viewModel, {
+    activeTab: activeTabTarget,
+    onSelectAsset: (assetId) => {
+      selectedAssetId = assetId;
+      renderCurrent();
+    },
+  });
+}
 
 async function refreshDashboard() {
-  const raw = await loadDashboardData();
-  const viewModel = createViewModel(raw);
-  if (lastBlockchainConnection) {
-    viewModel.blockchainConnection = lastBlockchainConnection;
+  if (refreshInFlight) {
+    return;
   }
-  if (lastWalletConnection) {
-    viewModel.walletConnection = lastWalletConnection;
+  refreshInFlight = true;
+
+  try {
+    const result = await loadDashboardData(lastPayload);
+    lastPayload = result.payload;
+    renderCurrent();
+  } finally {
+    refreshInFlight = false;
   }
-  renderDashboard(viewModel);
+}
+
+function setButtonBusy(button, busy, busyLabel, idleLabel) {
+  if (!button) {
+    return;
+  }
+  button.disabled = busy;
+  button.textContent = busy ? busyLabel : idleLabel;
 }
 
 function setupInteractions() {
@@ -28,34 +138,34 @@ function setupInteractions() {
   }
 
   verifyButton.addEventListener("click", async () => {
-    verifyButton.disabled = true;
-    verifyButton.textContent = "Connecting...";
-
+    setButtonBusy(verifyButton, true, "Connecting...", "Connect Sepolia");
     try {
       const connection = await connectToSepolia();
       lastBlockchainConnection = connection;
-      renderBlockchainConnectionStatus(connection);
+      renderCurrent();
       verifyButton.textContent = connection.connected ? "Sepolia Connected" : "Retry Sepolia";
       setTimeout(() => {
-        verifyButton.textContent = "Connect Sepolia";
-      }, 1500);
+        if (!verifyButton.disabled) {
+          verifyButton.textContent = "Connect Sepolia";
+        }
+      }, 1800);
     } finally {
       verifyButton.disabled = false;
     }
   });
 
   walletButton.addEventListener("click", async () => {
-    walletButton.disabled = true;
-    walletButton.textContent = "Connecting...";
-
+    setButtonBusy(walletButton, true, "Connecting...", "Connect Wallet");
     try {
       const walletConnection = await connectMetaMaskWallet();
       lastWalletConnection = walletConnection;
-      renderWalletConnectionStatus(walletConnection);
+      renderCurrent();
       walletButton.textContent = walletConnection.connected ? "Wallet Connected" : "Retry Wallet";
       setTimeout(() => {
-        walletButton.textContent = "Connect Wallet";
-      }, 1500);
+        if (!walletButton.disabled) {
+          walletButton.textContent = "Connect Wallet";
+        }
+      }, 1800);
     } finally {
       walletButton.disabled = false;
     }
@@ -63,6 +173,9 @@ function setupInteractions() {
 }
 
 async function boot() {
+  setupSectionTabs(() => {
+    renderCurrent();
+  });
   renderClock(new Date());
   setInterval(() => renderClock(new Date()), DASHBOARD_CONFIG.clockIntervalMs);
 
@@ -72,7 +185,9 @@ async function boot() {
   if (refreshHandle) {
     clearInterval(refreshHandle);
   }
-  refreshHandle = setInterval(refreshDashboard, DASHBOARD_CONFIG.refreshIntervalMs);
+  refreshHandle = setInterval(() => {
+    void refreshDashboard();
+  }, DASHBOARD_CONFIG.refreshIntervalMs);
 }
 
-boot();
+void boot();

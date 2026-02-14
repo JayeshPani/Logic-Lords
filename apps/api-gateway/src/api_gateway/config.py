@@ -18,7 +18,12 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
     blockchain_verification_base_url: str = "http://127.0.0.1:8105"
+    blockchain_verification_fallback_urls_csv: str = (
+        "http://127.0.0.1:8235,http://127.0.0.1:8123"
+    )
     blockchain_connect_timeout_seconds: float = 15.0
+    sensor_ingestion_base_url: str = "http://127.0.0.1:8100"
+    sensor_telemetry_timeout_seconds: float = 8.0
 
     model_config = SettingsConfigDict(env_prefix="API_GATEWAY_", extra="ignore")
 
@@ -26,6 +31,18 @@ class Settings(BaseSettings):
     def auth_tokens(self) -> set[str]:
         tokens = [token.strip() for token in self.auth_bearer_tokens_csv.split(",")]
         return {token for token in tokens if token}
+
+    @property
+    def blockchain_verification_urls(self) -> list[str]:
+        urls: list[str] = []
+        for candidate in [
+            self.blockchain_verification_base_url,
+            *self.blockchain_verification_fallback_urls_csv.split(","),
+        ]:
+            value = candidate.strip()
+            if value and value not in urls:
+                urls.append(value)
+        return urls
 
 
 def get_settings() -> Settings:

@@ -54,3 +54,4 @@ AI-based urban infrastructure health monitoring platform with autonomous orchest
 22. Validate Module-13 API gateway auth/rate-limit facade and OpenAPI contract alignment using `make module13-check`.
 23. Validate Module-14 dashboard web module rendering + asset serving using `make module14-check`.
 24. Run Step-15 full test matrix (contract -> integration -> e2e -> performance) using `make module15-check`.
+25. Wire ESP32 DHT11 + accelerometer to Firebase and dashboard using `docs/firebase-telemetry-runbook.md`.

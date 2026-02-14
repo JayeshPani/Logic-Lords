@@ -28,6 +28,7 @@ Operational and governance UI for risk status and maintenance verification.
   - `GET /assets`
   - `GET /assets/{asset_id}/health`
   - `GET /assets/{asset_id}/forecast?horizon_hours=72`
+  - `GET /telemetry/{asset_id}/latest`
   - `GET /maintenance/{maintenance_id}/verification`
   - `GET /health`
   - `POST /blockchain/connect`
@@ -62,6 +63,21 @@ bash blockchain/scripts/deploy_sepolia_foundry.sh
 - Install MetaMask in browser.
 - Select/import an account.
 - Ensure chain is Sepolia (wallet can switch automatically when you click `Connect Wallet`).
+
+5. For live DHT11 + accelerometer telemetry cards:
+```bash
+cd apps/sensor-ingestion-service
+export SENSOR_INGESTION_FIREBASE_DB_URL="https://<project-id>-default-rtdb.firebaseio.com"
+# export SENSOR_INGESTION_FIREBASE_AUTH_TOKEN="<optional-token>"
+python3 -m uvicorn src.main:app --reload --port 8100
+
+cd ../../apps/api-gateway
+export API_GATEWAY_SENSOR_INGESTION_BASE_URL="http://127.0.0.1:8100"
+python3 -m uvicorn src.main:app --reload --port 8090
+```
+
+ESP32 sketch path:
+- `firmware/esp32/firebase_dht11_mpu6050/esp32_firebase_dht11_mpu6050.ino`
 
 ## Validation
 ```bash

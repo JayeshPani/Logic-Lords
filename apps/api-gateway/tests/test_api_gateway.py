@@ -1,5 +1,6 @@
 """Tests for API gateway."""
 
+import json
 from pathlib import Path
 import sys
 
@@ -194,3 +195,148 @@ def test_connect_blockchain_service_timeout_raises_api_error(monkeypatch: pytest
 
     assert exc_info.value.status_code == 504
     assert exc_info.value.code == "BLOCKCHAIN_TIMEOUT"
+
+
+def test_connect_blockchain_service_uses_fallback_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "connected": True,
+        "network": "sepolia",
+        "expected_chain_id": 11155111,
+        "chain_id": 11155111,
+        "latest_block": 100042,
+        "contract_address": None,
+        "contract_deployed": None,
+        "checked_at": "2026-02-14T06:00:00+00:00",
+        "message": "Connected to Sepolia RPC.",
+    }
+
+    class FakeResponse:
+        def __init__(self, body: str) -> None:
+            self._body = body
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return self._body.encode("utf-8")
+
+    def fake_urlopen(request: object, timeout: float):  # noqa: ARG001
+        url = getattr(request, "full_url")
+        if url.startswith("http://127.0.0.1:8105"):
+            raise gateway_routes.url_error.URLError("[Errno 61] Connection refused")
+        return FakeResponse(json.dumps(payload))
+
+    monkeypatch.setattr(gateway_routes.url_request, "urlopen", fake_urlopen)
+
+    previous_base = gateway_routes._settings.blockchain_verification_base_url
+    previous_fallbacks = gateway_routes._settings.blockchain_verification_fallback_urls_csv
+    gateway_routes._settings.blockchain_verification_base_url = "http://127.0.0.1:8105"
+    gateway_routes._settings.blockchain_verification_fallback_urls_csv = "http://127.0.0.1:8235"
+    try:
+        result = gateway_routes._connect_blockchain_service("trc_test_gateway_001")
+    finally:
+        gateway_routes._settings.blockchain_verification_base_url = previous_base
+        gateway_routes._settings.blockchain_verification_fallback_urls_csv = previous_fallbacks
+
+    assert result["connected"] is True
+    assert result["chain_id"] == 11155111
+
+
+def test_connect_blockchain_service_unavailable_includes_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(request: object, timeout: float):  # noqa: ARG001
+        url = getattr(request, "full_url")
+        raise gateway_routes.url_error.URLError(f"refused for {url}")
+
+    monkeypatch.setattr(gateway_routes.url_request, "urlopen", fake_urlopen)
+
+    previous_base = gateway_routes._settings.blockchain_verification_base_url
+    previous_fallbacks = gateway_routes._settings.blockchain_verification_fallback_urls_csv
+    gateway_routes._settings.blockchain_verification_base_url = "http://127.0.0.1:8105"
+    gateway_routes._settings.blockchain_verification_fallback_urls_csv = "http://127.0.0.1:8235"
+    try:
+        with pytest.raises(ApiError) as exc_info:
+            gateway_routes._connect_blockchain_service("trc_test_gateway_001")
+    finally:
+        gateway_routes._settings.blockchain_verification_base_url = previous_base
+        gateway_routes._settings.blockchain_verification_fallback_urls_csv = previous_fallbacks
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "BLOCKCHAIN_UNAVAILABLE"
+    assert "Tried:" in exc_info.value.message
+
+
+def test_asset_telemetry_proxies_sensor_ingestion(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_fetch(asset_id: str, _trace_id: str) -> dict:
+        assert asset_id == "asset_w12_bridge_0042"
+        return {
+            "asset_id": asset_id,
+            "source": "firebase",
+            "captured_at": "2026-02-14T12:00:00+00:00",
+            "sensors": {
+                "strain": {
+                    "value": 13.5,
+                    "unit": "me",
+                    "delta": "+0.2 variance",
+                    "samples": [12.8, 13.1, 13.3, 13.5],
+                },
+                "vibration": {
+                    "value": 1.2,
+                    "unit": "mm/s",
+                    "delta": "+0.1 trend",
+                    "samples": [0.9, 1.0, 1.1, 1.2],
+                },
+                "temperature": {
+                    "value": 29.2,
+                    "unit": "C",
+                    "delta": "+0.4 spike",
+                    "samples": [28.1, 28.5, 28.8, 29.2],
+                },
+                "tilt": {
+                    "value": 3.5,
+                    "unit": "deg",
+                    "delta": "+0.2 drift",
+                    "samples": [2.9, 3.1, 3.2, 3.5],
+                },
+            },
+            "computed": {
+                "acceleration_magnitude_g": 1.01,
+                "vibration_rms_ms2": 1.2,
+                "tilt_deg": 3.5,
+                "strain_proxy_microstrain": 13.5,
+                "thermal_stress_index": 0.38,
+                "fatigue_index": 0.19,
+                "health_proxy_score": 0.77,
+            },
+        }
+
+    monkeypatch.setattr(gateway_routes, "_fetch_sensor_telemetry", fake_fetch)
+
+    response = client.get("/telemetry/asset_w12_bridge_0042/latest", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["source"] == "firebase"
+    assert body["data"]["sensors"]["temperature"]["value"] == 29.2
+    assert body["data"]["computed"]["health_proxy_score"] == 0.77
+
+
+def test_asset_telemetry_maps_unavailable_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_fetch(_asset_id: str, _trace_id: str) -> dict:
+        raise ApiError(
+            status_code=503,
+            code="SENSOR_INGESTION_UNAVAILABLE",
+            message="Sensor ingestion service unreachable",
+            trace_id="trc_test_gateway_001",
+        )
+
+    monkeypatch.setattr(gateway_routes, "_fetch_sensor_telemetry", fake_fetch)
+
+    response = client.get("/telemetry/asset_w12_bridge_0042/latest", headers=AUTH_HEADERS)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SENSOR_INGESTION_UNAVAILABLE"

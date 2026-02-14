@@ -17,6 +17,11 @@ def test_dashboard_page_served() -> None:
     assert response.status_code == 200
     assert "InfraGuard Control Room" in response.text
     assert "Connect Wallet" in response.text
+    assert "ops-kpi-grid" in response.text
+    assert "triage-list" in response.text
+    assert "selected-asset-title" in response.text
+    assert "verify-chain-btn" in response.text
+    assert "risk-map-status" in response.text
 
 
 def test_dashboard_static_assets_served() -> None:

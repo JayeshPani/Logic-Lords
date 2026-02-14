@@ -18,6 +18,7 @@ Unified HTTP facade for dashboard, mobile, and external consumers.
 - `GET /assets/{asset_id}`
 - `GET /assets/{asset_id}/health`
 - `GET /assets/{asset_id}/forecast`
+- `GET /telemetry/{asset_id}/latest`
 - `GET /maintenance/{maintenance_id}/verification`
 - `POST /blockchain/connect`
 
@@ -39,6 +40,8 @@ python3 -m uvicorn src.main:app --reload --port 8080
 - `API_GATEWAY_RATE_LIMIT_WINDOW_SECONDS` (default: `60`)
 - `API_GATEWAY_BLOCKCHAIN_VERIFICATION_BASE_URL` (default: `http://127.0.0.1:8105`)
 - `API_GATEWAY_BLOCKCHAIN_CONNECT_TIMEOUT_SECONDS` (default: `15.0`)
+- `API_GATEWAY_SENSOR_INGESTION_BASE_URL` (default: `http://127.0.0.1:8100`)
+- `API_GATEWAY_SENSOR_TELEMETRY_TIMEOUT_SECONDS` (default: `8.0`)
 
 ## Module-13 Validation
 
