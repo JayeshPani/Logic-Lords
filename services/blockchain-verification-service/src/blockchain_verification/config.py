@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     required_confirmations: int = 3
     initial_block_number: int = 100000
     sepolia_rpc_url: str | None = None
+    sepolia_rpc_fallback_urls_csv: str = ""
     sepolia_chain_id: int = 11155111
     sepolia_contract_address: str | None = None
     sepolia_rpc_timeout_seconds: float = 6.0

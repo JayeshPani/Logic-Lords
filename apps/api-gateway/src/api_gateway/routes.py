@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import logging
+import socket
 from typing import Annotated
 from urllib import error as url_error
 from urllib import request as url_request
@@ -78,6 +79,20 @@ def _connect_blockchain_service(trace_id: str) -> dict:
             status_code=503,
             code="BLOCKCHAIN_UNAVAILABLE",
             message=f"Blockchain service unreachable: {exc.reason}",
+            trace_id=trace_id,
+        ) from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise ApiError(
+            status_code=504,
+            code="BLOCKCHAIN_TIMEOUT",
+            message=f"Blockchain service timed out after {timeout_seconds:.1f}s.",
+            trace_id=trace_id,
+        ) from exc
+    except OSError as exc:
+        raise ApiError(
+            status_code=503,
+            code="BLOCKCHAIN_UNAVAILABLE",
+            message=f"Blockchain service network error: {exc}",
             trace_id=trace_id,
         ) from exc
 

@@ -157,3 +157,40 @@ def test_blockchain_connect_returns_error_when_service_unavailable(monkeypatch: 
     assert response.status_code == 503
     body = response.json()
     assert body["error"]["code"] == "BLOCKCHAIN_UNAVAILABLE"
+
+
+def test_blockchain_connect_maps_timeout_to_504(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_connect(_trace_id: str) -> dict:
+        raise ApiError(
+            status_code=504,
+            code="BLOCKCHAIN_TIMEOUT",
+            message="Blockchain service timed out after 15.0s.",
+            trace_id="trc_test_gateway_001",
+        )
+
+    monkeypatch.setattr(gateway_routes, "_connect_blockchain_service", fake_connect)
+
+    response = client.post("/blockchain/connect", headers=AUTH_HEADERS)
+    assert response.status_code == 504
+    body = response.json()
+    assert body["error"]["code"] == "BLOCKCHAIN_TIMEOUT"
+
+
+def test_connect_blockchain_service_timeout_raises_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(*_args, **_kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(gateway_routes.url_request, "urlopen", fake_urlopen)
+
+    previous_timeout = gateway_routes._settings.blockchain_connect_timeout_seconds
+    gateway_routes._settings.blockchain_connect_timeout_seconds = 1.5
+    try:
+        with pytest.raises(ApiError) as exc_info:
+            gateway_routes._connect_blockchain_service("trc_test_gateway_001")
+    finally:
+        gateway_routes._settings.blockchain_connect_timeout_seconds = previous_timeout
+
+    assert exc_info.value.status_code == 504
+    assert exc_info.value.code == "BLOCKCHAIN_TIMEOUT"

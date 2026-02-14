@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import re
+from urllib.parse import urlparse
 
 from .config import Settings
 from .events import build_maintenance_verified_blockchain_event
@@ -132,7 +133,8 @@ class BlockchainVerificationEngine:
                 "(expected 0x + 40 hex chars)."
             )
 
-        if not self._settings.sepolia_rpc_url:
+        rpc_urls = self._sepolia_rpc_candidates()
+        if not rpc_urls:
             return SepoliaConnectionResponse(
                 connected=False,
                 expected_chain_id=self._settings.sepolia_chain_id,
@@ -142,52 +144,70 @@ class BlockchainVerificationEngine:
                 contract_deployed=None,
                 checked_at=checked_at,
                 message=(
-                    "Sepolia RPC is not configured. Set BLOCKCHAIN_VERIFICATION_SEPOLIA_RPC_URL."
+                    "Sepolia RPC is not configured. Set BLOCKCHAIN_VERIFICATION_SEPOLIA_RPC_URL "
+                    "or BLOCKCHAIN_VERIFICATION_SEPOLIA_RPC_FALLBACK_URLS_CSV."
                     f"{contract_warning}"
                 ),
             )
+        selected_rpc_label = ""
+        selected_client: SepoliaRpcClient | None = None
+        chain_id: int | None = None
+        latest_block: int | None = None
+        last_rpc_error: str | None = None
+        last_chain_mismatch_chain_id: int | None = None
+        last_chain_mismatch_latest_block: int | None = None
 
-        client = SepoliaRpcClient(
-            rpc_url=self._settings.sepolia_rpc_url,
-            timeout_seconds=self._settings.sepolia_rpc_timeout_seconds,
-        )
-
-        try:
-            chain_id = client.get_chain_id()
-            latest_block = client.get_latest_block_number()
-        except SepoliaRpcError as exc:
-            return SepoliaConnectionResponse(
-                connected=False,
-                expected_chain_id=self._settings.sepolia_chain_id,
-                chain_id=None,
-                latest_block=None,
-                contract_address=contract_address,
-                contract_deployed=None,
-                checked_at=checked_at,
-                message=f"Sepolia RPC connection failed: {exc}.{contract_warning}",
+        for rpc_url in rpc_urls:
+            rpc_label = self._rpc_label(rpc_url)
+            candidate_client = SepoliaRpcClient(
+                rpc_url=rpc_url,
+                timeout_seconds=self._settings.sepolia_rpc_timeout_seconds,
             )
+            try:
+                candidate_chain_id = candidate_client.get_chain_id()
+                candidate_latest_block = candidate_client.get_latest_block_number()
+            except SepoliaRpcError as exc:
+                last_rpc_error = f"{rpc_label}: {exc}"
+                continue
 
-        if chain_id != self._settings.sepolia_chain_id:
+            if candidate_chain_id != self._settings.sepolia_chain_id:
+                last_chain_mismatch_chain_id = candidate_chain_id
+                last_chain_mismatch_latest_block = candidate_latest_block
+                last_rpc_error = (
+                    f"{rpc_label}: chain_id={candidate_chain_id}, "
+                    f"expected={self._settings.sepolia_chain_id}"
+                )
+                continue
+
+            selected_rpc_label = rpc_label
+            selected_client = candidate_client
+            chain_id = candidate_chain_id
+            latest_block = candidate_latest_block
+            break
+
+        if selected_client is None:
+            message = f"Sepolia RPC connection failed across {len(rpc_urls)} endpoint(s)."
+            if last_rpc_error:
+                message = f"{message} Last error: {last_rpc_error}."
+            if len(message) > 480:
+                message = message[:480]
             return SepoliaConnectionResponse(
                 connected=False,
                 expected_chain_id=self._settings.sepolia_chain_id,
-                chain_id=chain_id,
-                latest_block=latest_block,
+                chain_id=last_chain_mismatch_chain_id,
+                latest_block=last_chain_mismatch_latest_block,
                 contract_address=contract_address,
                 contract_deployed=None,
                 checked_at=checked_at,
-                message=(
-                    f"Connected RPC chain_id={chain_id}, expected "
-                    f"{self._settings.sepolia_chain_id} (Sepolia).{contract_warning}"
-                ),
+                message=f"{message}{contract_warning}",
             )
 
         contract_deployed: bool | None = None
-        message = f"Connected to Sepolia RPC.{contract_warning}"
+        message = f"Connected to Sepolia RPC via {selected_rpc_label}.{contract_warning}"
 
         if contract_address:
             try:
-                contract_deployed = client.contract_is_deployed(contract_address)
+                contract_deployed = selected_client.contract_is_deployed(contract_address)
             except SepoliaRpcError as exc:
                 return SepoliaConnectionResponse(
                     connected=False,
@@ -213,6 +233,34 @@ class BlockchainVerificationEngine:
             checked_at=checked_at,
             message=message,
         )
+
+    def _sepolia_rpc_candidates(self) -> list[str]:
+        """Return deduplicated list of configured RPC endpoints, ordered by priority."""
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def _append(raw: str | None) -> None:
+            if raw is None:
+                return
+            normalized = raw.strip()
+            if not normalized or normalized in seen:
+                return
+            seen.add(normalized)
+            candidates.append(normalized)
+
+        _append(self._settings.sepolia_rpc_url)
+        for value in self._settings.sepolia_rpc_fallback_urls_csv.split(","):
+            _append(value)
+
+        return candidates
+
+    @staticmethod
+    def _rpc_label(rpc_url: str) -> str:
+        parsed = urlparse(rpc_url)
+        if parsed.netloc:
+            return parsed.netloc
+        return rpc_url
 
     @staticmethod
     def _normalize_contract_address(value: str | None) -> str | None:

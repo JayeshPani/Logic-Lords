@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT / "src"))
 
 from blockchain_verification.main import app  # noqa: E402
+import blockchain_verification.engine as engine_module  # noqa: E402
 from blockchain_verification.observability import get_metrics  # noqa: E402
 from blockchain_verification.routes import _engine  # noqa: E402
 from blockchain_verification.schemas import SepoliaConnectionResponse  # noqa: E402
@@ -209,3 +210,82 @@ def test_onchain_connect_returns_structured_failure_on_unexpected_exception(
     assert body["connected"] is False
     assert body["network"] == "sepolia"
     assert "failed" in body["message"].lower()
+
+
+def test_onchain_connect_uses_fallback_rpc_when_primary_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(app)
+
+    class FakeSepoliaRpcClient:
+        def __init__(self, *, rpc_url: str, timeout_seconds: float) -> None:
+            self.rpc_url = rpc_url
+            self.timeout_seconds = timeout_seconds
+
+        def get_chain_id(self) -> int:
+            if "blocked" in self.rpc_url:
+                raise engine_module.SepoliaRpcError("rpc_http_error status=403 body=error code: 1010.")
+            return 11155111
+
+        def get_latest_block_number(self) -> int:
+            return 123456
+
+        def contract_is_deployed(self, _contract_address: str) -> bool:
+            return True
+
+    monkeypatch.setattr(engine_module, "SepoliaRpcClient", FakeSepoliaRpcClient)
+
+    previous_primary = _engine._settings.sepolia_rpc_url
+    previous_fallbacks = _engine._settings.sepolia_rpc_fallback_urls_csv
+    _engine._settings.sepolia_rpc_url = "https://blocked-rpc.example"
+    _engine._settings.sepolia_rpc_fallback_urls_csv = "https://working-rpc.example"
+    try:
+        response = client.post("/onchain/connect")
+    finally:
+        _engine._settings.sepolia_rpc_url = previous_primary
+        _engine._settings.sepolia_rpc_fallback_urls_csv = previous_fallbacks
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is True
+    assert body["chain_id"] == 11155111
+    assert body["latest_block"] == 123456
+    assert "working-rpc.example" in body["message"]
+
+
+def test_onchain_connect_returns_failed_after_all_rpc_candidates_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(app)
+
+    class FakeSepoliaRpcClient:
+        def __init__(self, *, rpc_url: str, timeout_seconds: float) -> None:
+            self.rpc_url = rpc_url
+            self.timeout_seconds = timeout_seconds
+
+        def get_chain_id(self) -> int:
+            raise engine_module.SepoliaRpcError("rpc_http_error status=403 body=error code: 1010.")
+
+        def get_latest_block_number(self) -> int:
+            return 0
+
+        def contract_is_deployed(self, _contract_address: str) -> bool:
+            return False
+
+    monkeypatch.setattr(engine_module, "SepoliaRpcClient", FakeSepoliaRpcClient)
+
+    previous_primary = _engine._settings.sepolia_rpc_url
+    previous_fallbacks = _engine._settings.sepolia_rpc_fallback_urls_csv
+    _engine._settings.sepolia_rpc_url = "https://blocked-a.example"
+    _engine._settings.sepolia_rpc_fallback_urls_csv = "https://blocked-b.example"
+    try:
+        response = client.post("/onchain/connect")
+    finally:
+        _engine._settings.sepolia_rpc_url = previous_primary
+        _engine._settings.sepolia_rpc_fallback_urls_csv = previous_fallbacks
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is False
+    assert body["chain_id"] is None
+    assert "across 2 endpoint(s)" in body["message"]

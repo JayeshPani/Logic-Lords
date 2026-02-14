@@ -38,7 +38,7 @@ python3 -m uvicorn src.main:app --reload --port 8080
 - `API_GATEWAY_RATE_LIMIT_REQUESTS` (default: `60`)
 - `API_GATEWAY_RATE_LIMIT_WINDOW_SECONDS` (default: `60`)
 - `API_GATEWAY_BLOCKCHAIN_VERIFICATION_BASE_URL` (default: `http://127.0.0.1:8105`)
-- `API_GATEWAY_BLOCKCHAIN_CONNECT_TIMEOUT_SECONDS` (default: `6.0`)
+- `API_GATEWAY_BLOCKCHAIN_CONNECT_TIMEOUT_SECONDS` (default: `15.0`)
 
 ## Module-13 Validation
 
