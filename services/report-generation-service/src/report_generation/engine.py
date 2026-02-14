@@ -10,6 +10,7 @@ import json
 from .config import Settings
 from .events import build_report_generated_event, build_verification_record_command
 from .schemas import (
+    EvidenceItem,
     GenerateReportRequest,
     GenerateReportResponse,
     InspectionRequestedEvent,
@@ -63,13 +64,22 @@ class ReportGenerationEngine:
             raise KeyError(f"maintenance context not found: {command.payload.maintenance_id}")
 
         inspection = self._store.get_inspection(command.payload.asset_id)
+        uploaded_evidence = self._store.list_finalized_evidence(command.payload.maintenance_id)
+        if command.payload.report_type == "maintenance_verification" and not uploaded_evidence:
+            raise ValueError("EVIDENCE_REQUIRED: at least one finalized evidence file is required.")
 
         source_traces = self._build_source_traces(command, maintenance, inspection)
-        evidence_hash = self._compute_evidence_hash(command, maintenance, inspection, now)
+        evidence_hash = self._compute_evidence_hash(
+            command,
+            maintenance,
+            inspection,
+            uploaded_evidence,
+            now,
+        )
         report_id = self._store.next_report_id(now)
 
         summary = self._build_summary(command, maintenance, inspection)
-        sections = self._build_sections(command, maintenance, inspection)
+        sections = self._build_sections(command, maintenance, inspection, uploaded_evidence)
 
         bundle = ReportBundle(
             report_id=report_id,
@@ -115,6 +125,8 @@ class ReportGenerationEngine:
             correlation_id=command.correlation_id,
         )
 
+        self._store.lock_evidence(command.payload.maintenance_id)
+
         return GenerateReportResponse(
             report_bundle=bundle,
             report_generated_event=report_event,
@@ -126,8 +138,19 @@ class ReportGenerationEngine:
         command: ReportGenerateCommand,
         maintenance: MaintenanceCompletedEvent,
         inspection: InspectionRequestedEvent | None,
+        uploaded_evidence: list[EvidenceItem],
         generated_at: datetime,
     ) -> str:
+        evidence_payload = [
+            {
+                "evidence_id": item.evidence_id,
+                "sha256_hex": item.sha256_hex,
+                "content_type": item.content_type,
+                "size_bytes": item.size_bytes,
+                "storage_uri": item.storage_uri,
+            }
+            for item in sorted(uploaded_evidence, key=lambda value: value.evidence_id)
+        ]
         payload = {
             "command": command.model_dump(mode="json", by_alias=True, exclude_none=True),
             "maintenance": maintenance.model_dump(mode="json", by_alias=True, exclude_none=True),
@@ -136,6 +159,7 @@ class ReportGenerationEngine:
                 if inspection is not None
                 else None
             ),
+            "uploaded_evidence": evidence_payload,
             "generated_at": generated_at.isoformat(),
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -167,6 +191,7 @@ class ReportGenerationEngine:
         command: ReportGenerateCommand,
         maintenance: MaintenanceCompletedEvent,
         inspection: InspectionRequestedEvent | None,
+        uploaded_evidence: list[EvidenceItem],
     ) -> dict[str, str | int | float | bool | list[str] | dict[str, str]]:
         sections: dict[str, str | int | float | bool | list[str] | dict[str, str]] = {
             "asset": command.payload.asset_id,
@@ -175,6 +200,8 @@ class ReportGenerationEngine:
             "maintenance_performed_by": maintenance.data.performed_by,
             "maintenance_completed_at": maintenance.data.completed_at.isoformat(),
             "maintenance_summary": maintenance.data.summary or "",
+            "uploaded_evidence_count": len(uploaded_evidence),
+            "uploaded_evidence_ids": [item.evidence_id for item in uploaded_evidence],
         }
         if command.payload.include_sensor_window is not None:
             sections["sensor_window"] = {

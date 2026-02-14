@@ -207,6 +207,159 @@ function buildAssetDetailModel(raw, selectedAsset, allAssets) {
   };
 }
 
+function normalizeEscalationStage(stage) {
+  const value = String(stage || "").toLowerCase();
+  if (value === "management_notified" || value === "acknowledged" || value === "police_notified" || value === "maintenance_completed") {
+    return value;
+  }
+  return "management_notified";
+}
+
+function stageLabel(stage) {
+  if (stage === "management_notified") {
+    return "Awaiting ACK";
+  }
+  if (stage === "acknowledged") {
+    return "Acknowledged";
+  }
+  if (stage === "police_notified") {
+    return "Police Escalated";
+  }
+  return "Closed";
+}
+
+function stageClass(stage) {
+  if (stage === "management_notified") {
+    return "status-watch";
+  }
+  if (stage === "acknowledged") {
+    return "status-ok";
+  }
+  if (stage === "police_notified") {
+    return "status-alert";
+  }
+  return "status-ok";
+}
+
+function buildAutomationModel(raw) {
+  const now = Date.now();
+  const incidents = Array.isArray(raw.automationIncidents) ? raw.automationIncidents : [];
+
+  const items = incidents
+    .map((incident) => {
+      const stage = normalizeEscalationStage(incident.escalation_stage);
+      const deadlineMs = Date.parse(incident.authority_ack_deadline_at || "");
+      const remainingSeconds = Number.isFinite(deadlineMs)
+        ? Math.floor((deadlineMs - now) / 1000)
+        : null;
+      const remainingLabel =
+        remainingSeconds === null
+          ? "-"
+          : remainingSeconds <= 0
+            ? "Expired"
+            : `${Math.floor(remainingSeconds / 60)}m ${remainingSeconds % 60}s`;
+
+      return {
+        workflowId: incident.workflow_id,
+        assetId: incident.asset_id,
+        riskPriority: String(incident.risk_priority || "low"),
+        stage,
+        stageLabel: stageLabel(stage),
+        stageClass: stageClass(stage),
+        status: String(incident.status || "inspection_requested"),
+        triggerReason: String(incident.trigger_reason || ""),
+        authorityNotifiedAt: incident.authority_notified_at || null,
+        authorityAckDeadlineAt: incident.authority_ack_deadline_at || null,
+        acknowledgedAt: incident.acknowledged_at || null,
+        acknowledgedBy: incident.acknowledged_by || null,
+        ackNotes: incident.ack_notes || null,
+        policeNotifiedAt: incident.police_notified_at || null,
+        inspectionTicketId: incident.inspection_ticket_id || null,
+        maintenanceId: incident.maintenance_id || null,
+        canAcknowledge: stage === "management_notified",
+        deadlineRemainingSeconds: remainingSeconds,
+        deadlineRemainingLabel: remainingLabel,
+        createdAt: incident.created_at || null,
+        updatedAt: incident.updated_at || null,
+      };
+    })
+    .sort((left, right) => {
+      const rightTime = Date.parse(right.updatedAt || right.createdAt || 0);
+      const leftTime = Date.parse(left.updatedAt || left.createdAt || 0);
+      return rightTime - leftTime;
+    });
+
+  return {
+    incidents: items,
+    openCount: items.filter((incident) => incident.stage === "management_notified").length,
+    escalatedCount: items.filter((incident) => incident.stage === "police_notified").length,
+  };
+}
+
+function normalizeEvidenceStatus(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "upload_pending" || value === "finalized" || value === "deleted") {
+    return value;
+  }
+  return "upload_pending";
+}
+
+function resolveVerificationStatus(raw, verification) {
+  const fromVerification = String(verification?.verification_status || "").toLowerCase();
+  if (fromVerification) {
+    return fromVerification;
+  }
+  const fromState = String(raw?.verificationState?.verification_status || "").toLowerCase();
+  if (fromState) {
+    return fromState;
+  }
+  return "awaiting_evidence";
+}
+
+function buildEvidenceModel(raw, activeMaintenanceId, selectedAssetId) {
+  const evidenceItems = Array.isArray(raw.evidenceByMaintenanceId?.[activeMaintenanceId])
+    ? raw.evidenceByMaintenanceId[activeMaintenanceId]
+    : [];
+  const normalizedItems = evidenceItems
+    .map((item) => ({
+      evidenceId: item.evidence_id,
+      maintenanceId: item.maintenance_id,
+      assetId: item.asset_id,
+      filename: item.filename,
+      contentType: item.content_type,
+      sizeBytes: Number(item.size_bytes ?? 0),
+      storageUri: item.storage_uri || "-",
+      sha256Hex: item.sha256_hex || null,
+      uploadedBy: item.uploaded_by || "-",
+      uploadedAt: item.uploaded_at || null,
+      finalizedAt: item.finalized_at || null,
+      status: normalizeEvidenceStatus(item.status),
+      category: item.category || null,
+      notes: item.notes || null,
+    }))
+    .filter((item) => Boolean(item.evidenceId))
+    .sort((left, right) => left.evidenceId.localeCompare(right.evidenceId));
+
+  const finalizedCount = normalizedItems.filter((item) => item.status === "finalized").length;
+  const verificationStatus = resolveVerificationStatus(raw, raw.verification);
+  const lockStates = new Set(["pending", "submitted", "confirmed"]);
+  const hasMaintenance = Boolean(activeMaintenanceId);
+  const canUpload = hasMaintenance && !lockStates.has(verificationStatus);
+  const canSubmit = hasMaintenance && finalizedCount > 0 && !lockStates.has(verificationStatus);
+
+  return {
+    maintenanceId: activeMaintenanceId || null,
+    selectedAssetId: selectedAssetId || null,
+    verificationStatus,
+    items: normalizedItems,
+    totalCount: normalizedItems.length,
+    finalizedCount,
+    pendingCount: normalizedItems.filter((item) => item.status === "upload_pending").length,
+    canUpload,
+    canSubmit,
+  };
+}
+
 export function createViewModel(raw, { selectedAssetId = null } = {}) {
   const blockchainConnection = raw.blockchainConnection ?? {
     connected: false,
@@ -237,6 +390,9 @@ export function createViewModel(raw, { selectedAssetId = null } = {}) {
   );
 
   const assetDetailModel = buildAssetDetailModel(raw, selectedAsset, assetRows);
+  const automationModel = buildAutomationModel(raw);
+  const activeMaintenanceId = raw.activeMaintenanceId || raw.verification?.maintenance_id || null;
+  const evidenceModel = buildEvidenceModel(raw, activeMaintenanceId, nextSelectedId);
 
   return {
     source: raw.source || "unknown",
@@ -244,6 +400,9 @@ export function createViewModel(raw, { selectedAssetId = null } = {}) {
     overviewModel,
     assetDetailModel,
     verification: raw.verification || null,
+    activeMaintenanceId,
+    evidenceModel,
+    automationModel,
     blockchainConnection,
     walletConnection,
     isConnected: Boolean(blockchainConnection.connected),

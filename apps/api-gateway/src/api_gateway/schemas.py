@@ -11,6 +11,11 @@ AssetStatus = Literal["active", "maintenance", "retired"]
 Severity = Literal["healthy", "watch", "warning", "critical"]
 RiskLevel = Literal["Very Low", "Low", "Moderate", "High", "Critical"]
 VerificationStatus = Literal["pending", "submitted", "confirmed", "failed"]
+WorkflowVerificationStatus = Literal["awaiting_evidence", "pending", "submitted", "confirmed", "failed"]
+EscalationStage = Literal["management_notified", "acknowledged", "police_notified", "maintenance_completed"]
+WorkflowStatus = Literal["started", "inspection_requested", "maintenance_completed", "failed"]
+PriorityLevel = Literal["low", "medium", "high", "critical"]
+EvidenceStatus = Literal["upload_pending", "finalized", "deleted"]
 
 
 class ApiMeta(BaseModel):
@@ -177,6 +182,8 @@ class AssetForecastResponse(BaseModel):
 class MaintenanceVerification(BaseModel):
     """Verification state for one maintenance action."""
 
+    verification_id: str | None = None
+    command_id: str | None = None
     maintenance_id: str = Field(pattern=r"^mnt_[0-9]{8}_[0-9]+$")
     asset_id: str
     verification_status: VerificationStatus
@@ -186,6 +193,14 @@ class MaintenanceVerification(BaseModel):
     contract_address: str = Field(pattern=r"^0x[a-fA-F0-9]{40}$")
     chain_id: int = Field(ge=1)
     block_number: int | None = Field(default=None, ge=0)
+    confirmations: int = Field(default=0, ge=0)
+    required_confirmations: int = Field(default=1, ge=1)
+    submitted_at: datetime | None = None
+    confirmed_at: datetime | None = None
+    failure_reason: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    trace_id: str | None = None
     verified_at: datetime | None = None
 
 
@@ -193,6 +208,101 @@ class MaintenanceVerificationResponse(BaseModel):
     """Verification response wrapper."""
 
     data: MaintenanceVerification
+    meta: ApiMeta
+
+
+class MaintenanceVerificationTrackResponse(BaseModel):
+    """Verification tracking response wrapper."""
+
+    data: MaintenanceVerification
+    maintenance_verified_event: dict[str, object] | None = None
+    meta: ApiMeta
+
+
+class EvidenceItem(BaseModel):
+    """Uploaded organization evidence record."""
+
+    evidence_id: str = Field(min_length=1)
+    maintenance_id: str = Field(pattern=r"^mnt_[0-9]{8}_[0-9]+$")
+    asset_id: str
+    filename: str = Field(min_length=1, max_length=240)
+    content_type: str = Field(min_length=1, max_length=120)
+    size_bytes: int = Field(ge=1)
+    storage_uri: str = Field(min_length=1)
+    sha256_hex: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{64}$")
+    uploaded_by: str = Field(min_length=1, max_length=128)
+    uploaded_at: datetime
+    finalized_at: datetime | None = None
+    status: EvidenceStatus
+    category: str | None = Field(default=None, max_length=64)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class CreateEvidenceUploadRequest(BaseModel):
+    """Request payload to create evidence upload session."""
+
+    asset_id: str
+    filename: str = Field(min_length=1, max_length=240)
+    content_type: str = Field(min_length=1, max_length=120)
+    size_bytes: int = Field(ge=1)
+    category: str | None = Field(default=None, max_length=64)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class CreateEvidenceUploadResponse(BaseModel):
+    """Evidence upload session details."""
+
+    data: EvidenceItem
+    upload_url: str
+    upload_method: Literal["PUT"] = "PUT"
+    upload_headers: dict[str, str] = Field(default_factory=dict)
+    expires_at: datetime
+    meta: ApiMeta
+
+
+class FinalizeEvidenceUploadRequest(BaseModel):
+    """Finalize evidence upload and compute file hash."""
+
+    uploaded_by: str = Field(min_length=1, max_length=128)
+
+
+class FinalizeEvidenceUploadResponse(BaseModel):
+    """Finalized evidence response."""
+
+    data: EvidenceItem
+    meta: ApiMeta
+
+
+class EvidenceListResponse(BaseModel):
+    """List of evidence records for maintenance ID."""
+
+    data: list[EvidenceItem]
+    meta: ApiMeta
+
+
+class VerificationSubmitRequest(BaseModel):
+    """Request body to submit verification after evidence upload."""
+
+    operator_wallet_address: str | None = Field(default=None, pattern=r"^0x[a-fA-F0-9]{40}$")
+    submitted_by: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class VerificationSubmitResult(BaseModel):
+    """Submit verification result from orchestration."""
+
+    workflow_id: str
+    maintenance_id: str = Field(pattern=r"^mnt_[0-9]{8}_[0-9]+$")
+    verification_status: WorkflowVerificationStatus
+    verification_maintenance_id: str | None = None
+    verification_tx_hash: str | None = Field(default=None, pattern=r"^0x[a-fA-F0-9]{64}$")
+    verification_error: str | None = None
+    verification_updated_at: datetime | None = None
+
+
+class VerificationSubmitResponse(BaseModel):
+    """Verification submit response wrapper."""
+
+    data: VerificationSubmitResult
     meta: ApiMeta
 
 
@@ -246,4 +356,71 @@ class AssetTelemetryResponse(BaseModel):
     """Telemetry response wrapper."""
 
     data: AssetTelemetry
+    meta: ApiMeta
+
+
+class AutomationIncident(BaseModel):
+    """Automation incident proxied from orchestration service."""
+
+    workflow_id: str
+    asset_id: str
+    risk_priority: PriorityLevel
+    escalation_stage: EscalationStage
+    status: WorkflowStatus
+    trigger_reason: str
+    created_at: datetime
+    updated_at: datetime
+    authority_notified_at: datetime | None = None
+    authority_ack_deadline_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    acknowledged_by: str | None = None
+    ack_notes: str | None = None
+    police_notified_at: datetime | None = None
+    management_dispatch_ids: list[str] = Field(default_factory=list)
+    police_dispatch_ids: list[str] = Field(default_factory=list)
+    inspection_ticket_id: str | None = None
+    maintenance_id: str | None = None
+    verification_status: WorkflowVerificationStatus | None = None
+    verification_maintenance_id: str | None = None
+    verification_tx_hash: str | None = Field(default=None, pattern=r"^0x[a-fA-F0-9]{64}$")
+    verification_error: str | None = None
+    verification_updated_at: datetime | None = None
+
+
+class AutomationIncidentListResponse(BaseModel):
+    """Automation incident collection response."""
+
+    data: list[AutomationIncident]
+    meta: ApiMeta
+
+
+class AutomationIncidentResponse(BaseModel):
+    """Single automation incident response."""
+
+    data: AutomationIncident
+    meta: ApiMeta
+
+
+class AutomationAcknowledgeRequest(BaseModel):
+    """Request payload for incident acknowledgement."""
+
+    acknowledged_by: str = Field(min_length=1, max_length=128)
+    ack_notes: str | None = Field(default=None, max_length=2000)
+
+
+class AutomationAcknowledgeResult(BaseModel):
+    """Acknowledgement result payload."""
+
+    workflow_id: str
+    escalation_stage: EscalationStage
+    acknowledged_at: datetime
+    acknowledged_by: str
+    ack_notes: str | None = None
+    police_notified_at: datetime | None = None
+
+
+class AutomationAcknowledgeResponse(BaseModel):
+    """Acknowledgement response wrapper."""
+
+    data: AutomationAcknowledgeResult
     meta: ApiMeta

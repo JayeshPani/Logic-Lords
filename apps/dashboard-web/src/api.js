@@ -201,6 +201,14 @@ function buildMaintenanceLogByAsset(assets, verification, healthByAsset) {
   return logs;
 }
 
+async function parseResponseJsonSafely(response) {
+  try {
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
+
 async function fetchJson(path, { auth = true, method = "GET", body = undefined } = {}) {
   const endpoint = path;
   const controller = new AbortController();
@@ -224,12 +232,7 @@ async function fetchJson(path, { auth = true, method = "GET", body = undefined }
 
     if (!response.ok) {
       let message = `HTTP ${response.status} for ${path}`;
-      let parsed = null;
-      try {
-        parsed = await response.json();
-      } catch (_error) {
-        parsed = null;
-      }
+      const parsed = await parseResponseJsonSafely(response);
 
       const code = parsed?.error?.code || classifyHttpCode(response.status);
       if (parsed?.error?.message) {
@@ -274,7 +277,11 @@ async function fetchJson(path, { auth = true, method = "GET", body = undefined }
 function cloneMockPayload(error = null) {
   const payload = JSON.parse(JSON.stringify(MOCK_DATA));
   payload.generatedAt = new Date().toISOString();
+  payload.activeMaintenanceId =
+    payload.activeMaintenanceId || payload.verification?.maintenance_id || DASHBOARD_CONFIG.maintenanceIdFallback;
   payload.walletConnection = emptyWalletStatus();
+  payload.verificationState = payload.verificationState || null;
+  payload.evidenceByMaintenanceId = payload.evidenceByMaintenanceId || {};
   payload.error = error
     ? {
         code: error.code || "MOCK_FALLBACK",
@@ -332,8 +339,63 @@ export async function loadDashboardData(previousPayload = null) {
       }),
     );
 
-    const verificationResponse = await fetchJson(`/maintenance/${DASHBOARD_CONFIG.maintenanceIdFallback}/verification`, { auth: true });
-    const verification = verificationResponse.data ?? null;
+    let automationIncidents = [];
+    try {
+      const incidentsResponse = await fetchJson("/automation/incidents", { auth: true });
+      automationIncidents = Array.isArray(incidentsResponse?.data) ? incidentsResponse.data : [];
+    } catch (_error) {
+      automationIncidents = [];
+    }
+
+    const incidentMaintenanceId =
+      automationIncidents.find(
+        (incident) =>
+          typeof incident?.maintenance_id === "string" && incident.maintenance_id.trim().length > 0,
+      )?.maintenance_id || null;
+    const preferredMaintenanceId =
+      incidentMaintenanceId ||
+      previousPayload?.verification?.maintenance_id ||
+      previousPayload?.activeMaintenanceId ||
+      null;
+
+    let verification = null;
+    if (preferredMaintenanceId) {
+      try {
+        const verificationResponse = await fetchJson(`/maintenance/${preferredMaintenanceId}/verification`, {
+          auth: true,
+        });
+        verification = verificationResponse.data ?? null;
+      } catch (_error) {
+        verification = null;
+      }
+    }
+
+    let evidenceItems = [];
+    if (preferredMaintenanceId) {
+      try {
+        const evidenceResponse = await fetchJson(`/maintenance/${preferredMaintenanceId}/evidence`, { auth: true });
+        evidenceItems = Array.isArray(evidenceResponse?.data) ? evidenceResponse.data : [];
+      } catch (_error) {
+        evidenceItems = [];
+      }
+    }
+
+    const incidentWithVerification = automationIncidents.find(
+      (incident) =>
+        incident &&
+        typeof incident.maintenance_id === "string" &&
+        incident.maintenance_id === preferredMaintenanceId &&
+        typeof incident.verification_status === "string",
+    );
+    const verificationState = incidentWithVerification
+      ? {
+          verification_status: incidentWithVerification.verification_status || null,
+          verification_maintenance_id: incidentWithVerification.verification_maintenance_id || null,
+          verification_tx_hash: incidentWithVerification.verification_tx_hash || null,
+          verification_error: incidentWithVerification.verification_error || null,
+          verification_updated_at: incidentWithVerification.verification_updated_at || null,
+        }
+      : null;
 
     const payload = {
       source: "live",
@@ -347,6 +409,14 @@ export async function loadDashboardData(previousPayload = null) {
       sensorsByAsset,
       maintenanceLogByAsset: buildMaintenanceLogByAsset(assets, verification, healthByAsset),
       verification,
+      verificationState,
+      activeMaintenanceId: verification?.maintenance_id || preferredMaintenanceId || null,
+      evidenceByMaintenanceId: preferredMaintenanceId
+        ? {
+            [preferredMaintenanceId]: evidenceItems,
+          }
+        : {},
+      automationIncidents,
       blockchainConnection: defaultBlockchainConnection(verification),
       walletConnection: emptyWalletStatus(),
     };
@@ -401,6 +471,174 @@ export async function connectToSepolia() {
       source: "dashboard",
     };
   }
+}
+
+export async function acknowledgeIncident(workflowId, { acknowledgedBy, ackNotes = null }) {
+  const response = await fetchJson(`/automation/incidents/${workflowId}/acknowledge`, {
+    auth: true,
+    method: "POST",
+    body: {
+      acknowledged_by: acknowledgedBy,
+      ack_notes: ackNotes,
+    },
+  });
+  return response?.data || null;
+}
+
+export async function trackMaintenanceVerification(maintenanceId) {
+  if (!maintenanceId) {
+    throw new DashboardApiError({
+      code: "MISSING_MAINTENANCE_ID",
+      message: "No maintenance ID available for verification tracking.",
+      endpoint: "/maintenance/{maintenance_id}/verification/track",
+    });
+  }
+
+  const response = await fetchJson(`/maintenance/${maintenanceId}/verification/track`, {
+    auth: true,
+    method: "POST",
+    body: {},
+  });
+  return response?.data || null;
+}
+
+export async function createEvidenceUpload(maintenanceId, payload) {
+  if (!maintenanceId) {
+    throw new DashboardApiError({
+      code: "MISSING_MAINTENANCE_ID",
+      message: "No maintenance ID available for evidence upload.",
+      endpoint: "/maintenance/{maintenance_id}/evidence/uploads",
+    });
+  }
+  const response = await fetchJson(`/maintenance/${maintenanceId}/evidence/uploads`, {
+    auth: true,
+    method: "POST",
+    body: payload,
+  });
+  return response || null;
+}
+
+export async function finalizeEvidenceUpload(maintenanceId, evidenceId, payload) {
+  if (!maintenanceId || !evidenceId) {
+    throw new DashboardApiError({
+      code: "MISSING_EVIDENCE_CONTEXT",
+      message: "Maintenance ID or evidence ID missing for evidence finalize.",
+      endpoint: "/maintenance/{maintenance_id}/evidence/{evidence_id}/finalize",
+    });
+  }
+  const response = await fetchJson(`/maintenance/${maintenanceId}/evidence/${evidenceId}/finalize`, {
+    auth: true,
+    method: "POST",
+    body: payload,
+  });
+  return response?.data || null;
+}
+
+export async function listMaintenanceEvidence(maintenanceId) {
+  if (!maintenanceId) {
+    return [];
+  }
+  const response = await fetchJson(`/maintenance/${maintenanceId}/evidence`, { auth: true });
+  return Array.isArray(response?.data) ? response.data : [];
+}
+
+export async function submitVerification(maintenanceId, payload = {}) {
+  if (!maintenanceId) {
+    throw new DashboardApiError({
+      code: "MISSING_MAINTENANCE_ID",
+      message: "No maintenance ID available for verification submit.",
+      endpoint: "/maintenance/{maintenance_id}/verification/submit",
+    });
+  }
+  const response = await fetchJson(`/maintenance/${maintenanceId}/verification/submit`, {
+    auth: true,
+    method: "POST",
+    body: payload,
+  });
+  return response?.data || null;
+}
+
+async function uploadToSignedUrl(uploadUrl, uploadMethod, uploadHeaders, file) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DASHBOARD_CONFIG.requestTimeoutMs);
+
+  try {
+    const response = await fetch(uploadUrl, {
+      method: uploadMethod || "PUT",
+      headers: uploadHeaders || {},
+      body: file,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new DashboardApiError({
+        code: "EVIDENCE_UPLOAD_FAILED",
+        message: `Evidence object upload failed with HTTP ${response.status}.`,
+        endpoint: uploadUrl,
+        status: response.status,
+      });
+    }
+  } catch (error) {
+    if (error instanceof DashboardApiError) {
+      throw error;
+    }
+    if (error?.name === "AbortError") {
+      throw new DashboardApiError({
+        code: "TIMEOUT",
+        message: "Evidence upload timed out.",
+        endpoint: uploadUrl,
+      });
+    }
+    throw new DashboardApiError({
+      code: "NETWORK_ERROR",
+      message: error?.message || "Evidence upload failed.",
+      endpoint: uploadUrl,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function uploadAndFinalizeEvidence({
+  maintenanceId,
+  assetId,
+  file,
+  uploadedBy,
+  category = null,
+  notes = null,
+}) {
+  if (!file) {
+    throw new DashboardApiError({
+      code: "EVIDENCE_FILE_REQUIRED",
+      message: "Select an evidence file before upload.",
+      endpoint: "/maintenance/{maintenance_id}/evidence/uploads",
+    });
+  }
+
+  const uploadSession = await createEvidenceUpload(maintenanceId, {
+    asset_id: assetId,
+    filename: file.name,
+    content_type: file.type || "application/octet-stream",
+    size_bytes: file.size,
+    category,
+    notes,
+  });
+
+  await uploadToSignedUrl(
+    uploadSession.upload_url,
+    uploadSession.upload_method,
+    uploadSession.upload_headers,
+    file,
+  );
+
+  const evidence = uploadSession?.data;
+  const finalized = await finalizeEvidenceUpload(
+    maintenanceId,
+    evidence?.evidence_id,
+    { uploaded_by: uploadedBy || "dashboard-operator" },
+  );
+
+  return finalized;
 }
 
 export { DashboardApiError };

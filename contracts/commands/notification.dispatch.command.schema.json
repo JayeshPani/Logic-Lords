@@ -19,6 +19,14 @@
               "type": "string",
               "enum": ["email", "sms", "webhook", "chat"]
             },
+            "fallback_channels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["email", "sms", "webhook", "chat"]
+              },
+              "uniqueItems": true
+            },
             "recipient": {
               "type": "string",
               "minLength": 1,

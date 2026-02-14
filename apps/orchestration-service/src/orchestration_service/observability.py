@@ -44,6 +44,9 @@ class OrchestrationMetrics:
             self.workflows_ignored_total = 0
             self.inspection_requested_total = 0
             self.maintenance_completed_total = 0
+            self.management_notified_total = 0
+            self.acknowledged_total = 0
+            self.police_notified_total = 0
             self.retries_total = 0
             self.workflow_failures_total = 0
             self.decision_latency_ms_sum = 0.0
@@ -72,6 +75,18 @@ class OrchestrationMetrics:
     def record_maintenance_completed(self) -> None:
         with self._lock:
             self.maintenance_completed_total += 1
+
+    def record_management_notified(self) -> None:
+        with self._lock:
+            self.management_notified_total += 1
+
+    def record_acknowledged(self) -> None:
+        with self._lock:
+            self.acknowledged_total += 1
+
+    def record_police_notified(self) -> None:
+        with self._lock:
+            self.police_notified_total += 1
 
     def record_retry(self) -> None:
         with self._lock:
@@ -107,6 +122,15 @@ class OrchestrationMetrics:
                 "# HELP infraguard_orchestration_maintenance_completed_total maintenance.completed events produced.",
                 "# TYPE infraguard_orchestration_maintenance_completed_total counter",
                 f"infraguard_orchestration_maintenance_completed_total {self.maintenance_completed_total}",
+                "# HELP infraguard_orchestration_management_notified_total Incidents where management authority was notified.",
+                "# TYPE infraguard_orchestration_management_notified_total counter",
+                f"infraguard_orchestration_management_notified_total {self.management_notified_total}",
+                "# HELP infraguard_orchestration_acknowledged_total Incidents acknowledged by management authority.",
+                "# TYPE infraguard_orchestration_acknowledged_total counter",
+                f"infraguard_orchestration_acknowledged_total {self.acknowledged_total}",
+                "# HELP infraguard_orchestration_police_notified_total Incidents escalated to police.",
+                "# TYPE infraguard_orchestration_police_notified_total counter",
+                f"infraguard_orchestration_police_notified_total {self.police_notified_total}",
                 "# HELP infraguard_orchestration_retries_total Retry attempts used by workflow dispatch.",
                 "# TYPE infraguard_orchestration_retries_total counter",
                 f"infraguard_orchestration_retries_total {self.retries_total}",

@@ -7,6 +7,7 @@ Dispatches operational alerts to field teams with template rendering, retries, a
 - Consume `notification.dispatch` command payloads.
 - Render severity-aware notification templates.
 - Retry failed sends per channel and fallback to secondary channels.
+- Respect per-dispatch `payload.fallback_channels` override when provided.
 - Expose dispatch status APIs and emit `notification.delivery.status` event payloads.
 
 ## API
@@ -42,4 +43,5 @@ make module11-check
 
 - Default channel adapters are stubbed as successful for local development.
 - Dispatch records are stored in-memory for runtime checks and contract tests.
+- Global `NOTIFICATION_FALLBACK_CHANNELS` is used unless payload-level fallback is sent.
 - `/metrics` exposes Prometheus-style counters for retries, fallback switches, and outcomes.

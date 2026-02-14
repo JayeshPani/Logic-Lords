@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     sepolia_chain_id: int = 11155111
     sepolia_contract_address: str | None = None
     sepolia_rpc_timeout_seconds: float = 6.0
+    tx_mode: str = "deterministic"
+    signer_private_key: str | None = None
+    gas_limit: int = 250000
+    max_gas_gwei: int = 30
+    track_interval_seconds: int = 20
 
     model_config = SettingsConfigDict(env_prefix="BLOCKCHAIN_VERIFICATION_", extra="ignore")
 

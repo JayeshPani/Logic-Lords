@@ -928,6 +928,13 @@ textarea {
   color: #00d4ff;
 }
 
+.secondary-btn {
+  margin-top: 6px;
+  border-color: rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.1);
+  color: #facc15;
+}
+
 .timeline {
   list-style: none;
   margin: 10px 0 0;
@@ -979,6 +986,92 @@ textarea {
 .map-panel,
 .table-panel {
   min-height: 340px;
+}
+
+.maintenance-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 14px;
+}
+
+.maintenance-evidence-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.evidence-meta {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(30, 41, 59, 0.78);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(2, 6, 23, 0.74);
+}
+
+.evidence-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.evidence-upload-controls {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(30, 41, 59, 0.78);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(2, 6, 23, 0.74);
+}
+
+.evidence-form-row {
+  display: grid;
+  gap: 6px;
+}
+
+.evidence-input-label {
+  color: var(--text-weak);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.evidence-file-input,
+.evidence-text-input,
+.evidence-textarea {
+  width: 100%;
+  border: 1px solid rgba(30, 41, 59, 0.84);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.78);
+  color: var(--text-strong);
+  padding: 9px 10px;
+}
+
+.evidence-file-input::file-selector-button {
+  border: 1px solid rgba(0, 212, 255, 0.44);
+  border-radius: 8px;
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--accent-blue);
+  padding: 5px 8px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.evidence-textarea {
+  resize: vertical;
+  min-height: 62px;
+}
+
+.evidence-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.evidence-table-wrap {
+  max-height: 210px;
 }
 
 .map-status {
@@ -1183,6 +1276,100 @@ tbody tr:hover {
   color: var(--risk-watch);
 }
 
+.automation-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.automation-incident-list {
+  display: grid;
+  gap: 10px;
+}
+
+.incident-row {
+  border: 1px solid rgba(30, 41, 59, 0.8);
+  border-radius: 14px;
+  background: rgba(11, 18, 34, 0.8);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.incident-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.incident-title {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.incident-meta {
+  color: var(--text-weak);
+  font-size: 11px;
+}
+
+.incident-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.incident-cell {
+  border: 1px solid rgba(30, 41, 59, 0.7);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(2, 6, 23, 0.78);
+  display: grid;
+  gap: 4px;
+}
+
+.incident-label {
+  color: var(--text-weak);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.incident-value {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.incident-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.incident-ack-btn {
+  border: 1px solid rgba(250, 204, 21, 0.38);
+  border-radius: 10px;
+  background: rgba(250, 204, 21, 0.12);
+  color: var(--risk-watch);
+  padding: 7px 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.incident-ack-btn:hover:not(:disabled) {
+  background: rgba(250, 204, 21, 0.2);
+}
+
+.incident-ack-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 @media (max-width: 1199px) {
   body {
     overflow: auto;
@@ -1208,8 +1395,10 @@ tbody tr:hover {
   .status-bar,
   .selected-grid,
   .context-grid,
+  .maintenance-grid,
   .sensor-grid,
-  .ledger-grid {
+  .ledger-grid,
+  .incident-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1249,9 +1438,15 @@ tbody tr:hover {
   .status-bar,
   .selected-grid,
   .context-grid,
+  .maintenance-grid,
   .sensor-grid,
   .summary-strip,
-  .ledger-grid {
+  .ledger-grid,
+  .incident-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-action-row {
     grid-template-columns: 1fr;
   }
 

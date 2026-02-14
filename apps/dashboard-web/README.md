@@ -9,9 +9,15 @@ Operational and governance UI for risk status and maintenance verification.
 - Sensor telemetry cards with micro-bar trends
 - 72-hour failure forecast line/area chart
 - Maintenance audit log with verification status
+- Automation incident tab with management ACK controls and police-escalation visibility
 - Blockchain verification summary panel
 - Sepolia connect button for live on-chain connectivity checks
+- Track Verification button for explicit confirmation polling
 - MetaMask wallet connect button for operator identity on Sepolia
+- Organization Evidence section in Maintenance tab:
+  - file upload + finalize
+  - evidence list by maintenance ID
+  - explicit verification submit trigger
 
 ## Architecture (Separation of Concerns)
 - `index.html`: semantic page structure only
@@ -30,6 +36,13 @@ Operational and governance UI for risk status and maintenance verification.
   - `GET /assets/{asset_id}/forecast?horizon_hours=72`
   - `GET /telemetry/{asset_id}/latest`
   - `GET /maintenance/{maintenance_id}/verification`
+  - `POST /maintenance/{maintenance_id}/verification/track`
+  - `POST /maintenance/{maintenance_id}/evidence/uploads`
+  - `POST /maintenance/{maintenance_id}/evidence/{evidence_id}/finalize`
+  - `GET /maintenance/{maintenance_id}/evidence`
+  - `POST /maintenance/{maintenance_id}/verification/submit`
+  - `GET /automation/incidents`
+  - `POST /automation/incidents/{workflow_id}/acknowledge`
   - `GET /health`
   - `POST /blockchain/connect`
 - Graceful fallback to local mock data when API is unavailable

@@ -70,7 +70,7 @@ class NotificationEngine:
             context=command.payload.context,
         )
 
-        channels = self._channel_sequence(command.payload.channel)
+        channels = self._channel_sequence(command.payload.channel, command.payload.fallback_channels)
         attempts_total = 0
         retries_used = 0
         fallback_used = False
@@ -192,9 +192,10 @@ class NotificationEngine:
 
         return self._store.list(status=status, recipient=recipient, channel=channel, severity=severity)
 
-    def _channel_sequence(self, primary: str) -> list[str]:
+    def _channel_sequence(self, primary: str, fallback_channels: list[str] | None) -> list[str]:
         sequence = [primary]
-        for channel in self._settings.fallback_channels:
+        preferred_fallbacks = fallback_channels if fallback_channels is not None else list(self._settings.fallback_channels)
+        for channel in preferred_fallbacks:
             if channel in self.CHANNELS and channel not in sequence:
                 sequence.append(channel)
         for channel in self.CHANNELS:

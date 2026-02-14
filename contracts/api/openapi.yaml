@@ -15,6 +15,7 @@ tags:
   - name: Risk
   - name: Forecast
   - name: Verification
+  - name: Automation
 paths:
   /health:
     get:
@@ -217,6 +218,156 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /maintenance/{maintenance_id}/verification/track:
+    post:
+      tags: [Verification]
+      operationId: trackMaintenanceVerification
+      summary: Trigger confirmation tracking for maintenance verification
+      parameters:
+        - $ref: '#/components/parameters/MaintenanceIdParam'
+      responses:
+        '200':
+          description: Verification tracking result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceVerificationTrackResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /maintenance/{maintenance_id}/evidence/uploads:
+    post:
+      tags: [Verification]
+      operationId: createEvidenceUpload
+      summary: Create signed upload session for maintenance evidence
+      parameters:
+        - $ref: '#/components/parameters/MaintenanceIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEvidenceUploadRequest'
+      responses:
+        '200':
+          description: Upload session and initial evidence record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEvidenceUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /maintenance/{maintenance_id}/evidence/{evidence_id}/finalize:
+    post:
+      tags: [Verification]
+      operationId: finalizeEvidenceUpload
+      summary: Finalize uploaded evidence and compute SHA-256 hash
+      parameters:
+        - $ref: '#/components/parameters/MaintenanceIdParam'
+        - $ref: '#/components/parameters/EvidenceIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizeEvidenceUploadRequest'
+      responses:
+        '200':
+          description: Finalized evidence record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinalizeEvidenceUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /maintenance/{maintenance_id}/evidence:
+    get:
+      tags: [Verification]
+      operationId: listMaintenanceEvidence
+      summary: List evidence records for a maintenance action
+      parameters:
+        - $ref: '#/components/parameters/MaintenanceIdParam'
+      responses:
+        '200':
+          description: Evidence list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /maintenance/{maintenance_id}/verification/submit:
+    post:
+      tags: [Verification]
+      operationId: submitMaintenanceVerification
+      summary: Submit blockchain verification after evidence upload
+      parameters:
+        - $ref: '#/components/parameters/MaintenanceIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationSubmitRequest'
+      responses:
+        '200':
+          description: Verification submission result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationSubmitResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /blockchain/connect:
     post:
       tags: [Verification]
@@ -244,6 +395,79 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /automation/incidents:
+    get:
+      tags: [Automation]
+      operationId: listAutomationIncidents
+      summary: List active automation incidents
+      responses:
+        '200':
+          description: Incident list from orchestration service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationIncidentListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /automation/incidents/{workflow_id}:
+    get:
+      tags: [Automation]
+      operationId: getAutomationIncident
+      summary: Get one automation incident
+      parameters:
+        - $ref: '#/components/parameters/WorkflowIdParam'
+      responses:
+        '200':
+          description: Incident details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationIncidentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /automation/incidents/{workflow_id}/acknowledge:
+    post:
+      tags: [Automation]
+      operationId: acknowledgeAutomationIncident
+      summary: Acknowledge an automation incident
+      parameters:
+        - $ref: '#/components/parameters/WorkflowIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationAcknowledgeRequest'
+      responses:
+        '200':
+          description: Acknowledgement recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationAcknowledgeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -268,6 +492,22 @@ components:
         type: string
         pattern: '^mnt_[0-9]{8}_[0-9]+$'
         example: mnt_20260213_0012
+    EvidenceIdParam:
+      name: evidence_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        example: evd_20260215_0001
+    WorkflowIdParam:
+      name: workflow_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        example: wf_20260214_120001_0001
     PageParam:
       name: page
       in: query
@@ -728,6 +968,199 @@ components:
       type: string
       enum: [pending, submitted, confirmed, failed]
 
+    WorkflowVerificationStatus:
+      type: string
+      enum: [awaiting_evidence, pending, submitted, confirmed, failed]
+
+    EvidenceStatus:
+      type: string
+      enum: [upload_pending, finalized, deleted]
+
+    EvidenceItem:
+      type: object
+      required:
+        - evidence_id
+        - maintenance_id
+        - asset_id
+        - filename
+        - content_type
+        - size_bytes
+        - storage_uri
+        - uploaded_by
+        - uploaded_at
+        - status
+      properties:
+        evidence_id:
+          type: string
+          minLength: 1
+        maintenance_id:
+          type: string
+          pattern: '^mnt_[0-9]{8}_[0-9]+$'
+        asset_id:
+          type: string
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 240
+        content_type:
+          type: string
+          minLength: 1
+          maxLength: 120
+        size_bytes:
+          type: integer
+          minimum: 1
+        storage_uri:
+          type: string
+          minLength: 1
+        sha256_hex:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+          nullable: true
+        uploaded_by:
+          type: string
+          minLength: 1
+          maxLength: 128
+        uploaded_at:
+          type: string
+          format: date-time
+        finalized_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          $ref: '#/components/schemas/EvidenceStatus'
+        category:
+          type: string
+          maxLength: 64
+          nullable: true
+        notes:
+          type: string
+          maxLength: 2000
+          nullable: true
+
+    CreateEvidenceUploadRequest:
+      type: object
+      required: [asset_id, filename, content_type, size_bytes]
+      properties:
+        asset_id:
+          type: string
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 240
+        content_type:
+          type: string
+          minLength: 1
+          maxLength: 120
+        size_bytes:
+          type: integer
+          minimum: 1
+        category:
+          type: string
+          maxLength: 64
+        notes:
+          type: string
+          maxLength: 2000
+      additionalProperties: false
+
+    CreateEvidenceUploadResponse:
+      type: object
+      required: [data, upload_url, upload_method, upload_headers, expires_at, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/EvidenceItem'
+        upload_url:
+          type: string
+        upload_method:
+          type: string
+          enum: [PUT]
+        upload_headers:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    FinalizeEvidenceUploadRequest:
+      type: object
+      required: [uploaded_by]
+      properties:
+        uploaded_by:
+          type: string
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
+
+    FinalizeEvidenceUploadResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/EvidenceItem'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    EvidenceListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceItem'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    VerificationSubmitRequest:
+      type: object
+      properties:
+        operator_wallet_address:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{40}$'
+        submitted_by:
+          type: string
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
+
+    VerificationSubmitResult:
+      type: object
+      required: [workflow_id, maintenance_id, verification_status]
+      properties:
+        workflow_id:
+          type: string
+        maintenance_id:
+          type: string
+          pattern: '^mnt_[0-9]{8}_[0-9]+$'
+        verification_status:
+          $ref: '#/components/schemas/WorkflowVerificationStatus'
+        verification_maintenance_id:
+          type: string
+          nullable: true
+        verification_tx_hash:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{64}$'
+          nullable: true
+        verification_error:
+          type: string
+          nullable: true
+        verification_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    VerificationSubmitResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/VerificationSubmitResult'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
     MaintenanceVerification:
       type: object
       required:
@@ -738,6 +1171,11 @@ components:
         - network
         - contract_address
       properties:
+        verification_id:
+          type: string
+        command_id:
+          type: string
+          format: uuid
         maintenance_id:
           type: string
           pattern: '^mnt_[0-9]{8}_[0-9]+$'
@@ -762,6 +1200,30 @@ components:
         block_number:
           type: integer
           minimum: 0
+        confirmations:
+          type: integer
+          minimum: 0
+          default: 0
+        required_confirmations:
+          type: integer
+          minimum: 1
+          default: 1
+        submitted_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+        failure_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        trace_id:
+          type: string
         verified_at:
           type: string
           format: date-time
@@ -772,6 +1234,19 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/MaintenanceVerification'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    MaintenanceVerificationTrackResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/MaintenanceVerification'
+        maintenance_verified_event:
+          type: object
+          additionalProperties: true
+          nullable: true
         meta:
           $ref: '#/components/schemas/ApiMeta'
 
@@ -890,5 +1365,147 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/AssetTelemetry'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    PriorityLevel:
+      type: string
+      enum: [low, medium, high, critical]
+
+    WorkflowStatus:
+      type: string
+      enum: [started, inspection_requested, maintenance_completed, failed]
+
+    EscalationStage:
+      type: string
+      enum: [management_notified, acknowledged, police_notified, maintenance_completed]
+
+    AutomationIncident:
+      type: object
+      required:
+        - workflow_id
+        - asset_id
+        - risk_priority
+        - escalation_stage
+        - status
+        - trigger_reason
+        - created_at
+        - updated_at
+      properties:
+        workflow_id:
+          type: string
+        asset_id:
+          type: string
+        risk_priority:
+          $ref: '#/components/schemas/PriorityLevel'
+        escalation_stage:
+          $ref: '#/components/schemas/EscalationStage'
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
+        trigger_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        authority_notified_at:
+          type: string
+          format: date-time
+          nullable: true
+        authority_ack_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+        acknowledged_at:
+          type: string
+          format: date-time
+          nullable: true
+        acknowledged_by:
+          type: string
+          nullable: true
+        ack_notes:
+          type: string
+          nullable: true
+        police_notified_at:
+          type: string
+          format: date-time
+          nullable: true
+        management_dispatch_ids:
+          type: array
+          items:
+            type: string
+        police_dispatch_ids:
+          type: array
+          items:
+            type: string
+        inspection_ticket_id:
+          type: string
+          nullable: true
+        maintenance_id:
+          type: string
+          nullable: true
+
+    AutomationIncidentListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AutomationIncident'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    AutomationIncidentResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AutomationIncident'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'
+
+    AutomationAcknowledgeRequest:
+      type: object
+      required: [acknowledged_by]
+      properties:
+        acknowledged_by:
+          type: string
+          minLength: 1
+          maxLength: 128
+        ack_notes:
+          type: string
+          maxLength: 2000
+      additionalProperties: false
+
+    AutomationAcknowledgeResult:
+      type: object
+      required: [workflow_id, escalation_stage, acknowledged_at, acknowledged_by]
+      properties:
+        workflow_id:
+          type: string
+        escalation_stage:
+          $ref: '#/components/schemas/EscalationStage'
+        acknowledged_at:
+          type: string
+          format: date-time
+        acknowledged_by:
+          type: string
+        ack_notes:
+          type: string
+          nullable: true
+        police_notified_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AutomationAcknowledgeResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AutomationAcknowledgeResult'
         meta:
           $ref: '#/components/schemas/ApiMeta'

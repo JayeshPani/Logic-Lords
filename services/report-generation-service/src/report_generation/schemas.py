@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 
 ReportType = Literal["inspection", "maintenance_verification"]
+EvidenceStatus = Literal["upload_pending", "finalized", "deleted"]
 
 
 class IncludeSensorWindow(BaseModel):
@@ -180,6 +181,73 @@ class GenerateReportResponse(BaseModel):
     report_bundle: ReportBundle
     report_generated_event: ReportGeneratedEvent
     verification_record_command: VerificationRecordBlockchainCommand
+
+
+class EvidenceItem(BaseModel):
+    """Maintenance evidence uploaded by organizations."""
+
+    evidence_id: str = Field(min_length=1)
+    maintenance_id: str = Field(min_length=1)
+    asset_id: str = Field(min_length=1)
+    filename: str = Field(min_length=1, max_length=240)
+    content_type: str = Field(min_length=1, max_length=120)
+    size_bytes: int = Field(ge=1)
+    storage_uri: str = Field(min_length=1)
+    storage_object_path: str = Field(min_length=1)
+    sha256_hex: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{64}$")
+    uploaded_by: str = Field(min_length=1, max_length=128)
+    uploaded_at: datetime
+    finalized_at: datetime | None = None
+    status: EvidenceStatus
+    category: str | None = Field(default=None, max_length=64)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class CreateEvidenceUploadRequest(BaseModel):
+    """Input payload for evidence upload session creation."""
+
+    asset_id: str = Field(min_length=1)
+    filename: str = Field(min_length=1, max_length=240)
+    content_type: str = Field(min_length=1, max_length=120)
+    size_bytes: int = Field(ge=1)
+    uploaded_by: str = Field(min_length=1, max_length=128)
+    category: str | None = Field(default=None, max_length=64)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class CreateEvidenceUploadResponse(BaseModel):
+    """Response for evidence upload session creation."""
+
+    evidence: EvidenceItem
+    upload_url: str
+    upload_method: Literal["PUT"] = "PUT"
+    upload_headers: dict[str, str] = Field(default_factory=dict)
+    expires_at: datetime
+
+
+class FinalizeEvidenceUploadRequest(BaseModel):
+    """Input payload for evidence upload finalization."""
+
+    uploaded_by: str = Field(min_length=1, max_length=128)
+
+
+class FinalizeEvidenceUploadResponse(BaseModel):
+    """Response for finalized evidence object."""
+
+    evidence: EvidenceItem
+
+
+class EvidenceListResponse(BaseModel):
+    """Response for maintenance evidence listing."""
+
+    items: list[EvidenceItem]
+
+
+class DeleteEvidenceResponse(BaseModel):
+    """Response for soft deleting evidence before submit."""
+
+    status: Literal["deleted"] = "deleted"
+    evidence: EvidenceItem
 
 
 class IngestEventResponse(BaseModel):

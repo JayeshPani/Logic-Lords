@@ -19,6 +19,7 @@ class AuthContext:
 
     subject: str
     token: str
+    roles: frozenset[str]
 
 
 class InMemoryRateLimiter:
@@ -71,7 +72,7 @@ def get_auth_context(request: Request) -> AuthContext:
 
     settings = get_settings()
     if not settings.auth_enabled:
-        return AuthContext(subject="anonymous", token="")
+        return AuthContext(subject="anonymous", token="", roles=frozenset({"anonymous"}))
 
     raw = request.headers.get("authorization", "")
     scheme, _, token = raw.partition(" ")
@@ -91,7 +92,26 @@ def get_auth_context(request: Request) -> AuthContext:
             trace_id=request.headers.get("x-trace-id"),
         )
 
-    return AuthContext(subject="gateway-client", token=token)
+    roles = settings.token_roles.get(token, frozenset({"operator"}))
+    return AuthContext(subject="gateway-client", token=token, roles=frozenset(roles))
+
+
+def require_roles(request: Request, auth: AuthContext, *allowed_roles: str) -> None:
+    """Validate caller roles for sensitive routes."""
+
+    normalized = {role.strip().lower() for role in allowed_roles if role.strip()}
+    if not normalized:
+        return
+
+    if auth.roles.intersection(normalized):
+        return
+
+    raise ApiError(
+        status_code=403,
+        code="FORBIDDEN",
+        message="Caller lacks required role for this action.",
+        trace_id=request.headers.get("x-trace-id"),
+    )
 
 
 def enforce_rate_limit(request: Request, auth: AuthContext | None = None) -> None:

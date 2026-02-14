@@ -83,6 +83,7 @@ def record(payload: VerificationRecordBlockchainCommand) -> RecordVerificationRe
         trace_id=payload.trace_id,
         network=payload.payload.network,
         chain_id=payload.payload.chain_id,
+        tx_mode=_settings.tx_mode,
     )
 
     try:
@@ -105,7 +106,10 @@ def record(payload: VerificationRecordBlockchainCommand) -> RecordVerificationRe
     latency_ms = (perf_counter() - started) * 1000.0
     if _settings.metrics_enabled:
         _metrics.record_record_request(latency_ms)
-        _metrics.record_submitted()
+        if record_obj.verification_status == "failed":
+            _metrics.record_failed()
+        else:
+            _metrics.record_submitted()
 
     log_event(
         logger,
@@ -113,8 +117,11 @@ def record(payload: VerificationRecordBlockchainCommand) -> RecordVerificationRe
         verification_id=record_obj.verification_id,
         maintenance_id=record_obj.maintenance_id,
         trace_id=record_obj.trace_id,
+        tx_mode=_settings.tx_mode,
+        status=record_obj.verification_status,
         tx_hash=record_obj.tx_hash,
         block_number=record_obj.block_number,
+        failure_reason=record_obj.failure_reason,
         latency_ms=round(latency_ms, 3),
     )
 
@@ -142,6 +149,8 @@ def track(maintenance_id: str) -> TrackVerificationResponse:
         _metrics.record_track_request(latency_ms)
         if result.maintenance_verified_event is not None:
             _metrics.record_confirmed()
+        elif result.record.verification_status == "failed":
+            _metrics.record_failed()
 
     event_model = None
     if result.maintenance_verified_event is not None:

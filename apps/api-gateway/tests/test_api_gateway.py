@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import sys
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
@@ -73,7 +74,7 @@ def test_asset_list_and_create_flow() -> None:
     assert fetched.json()["data"]["name"] == "West Sector Bridge 901"
 
 
-def test_health_forecast_and_verification_endpoints() -> None:
+def test_health_forecast_and_verification_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     client = TestClient(app)
 
     health = client.get("/assets/asset_w12_bridge_0042/health", headers=AUTH_HEADERS)
@@ -88,12 +89,40 @@ def test_health_forecast_and_verification_endpoints() -> None:
     assert forecast.status_code == 200
     assert forecast.json()["data"]["horizon_hours"] == 48
 
+    def fake_verification_request(*, trace_id: str, method: str, path: str, body: dict | None = None) -> dict:
+        del trace_id, body
+        assert method == "GET"
+        assert path == "/verifications/mnt_20260214_0012"
+        return {
+            "verification_id": "vfy_20260214_0001",
+            "command_id": str(uuid4()),
+            "maintenance_id": "mnt_20260214_0012",
+            "asset_id": "asset_w12_bridge_0042",
+            "verification_status": "confirmed",
+            "evidence_hash": "0x" + "a" * 64,
+            "tx_hash": "0x" + "b" * 64,
+            "network": "sepolia",
+            "contract_address": "0x" + "1" * 40,
+            "chain_id": 11155111,
+            "block_number": 123456,
+            "confirmations": 3,
+            "required_confirmations": 3,
+            "submitted_at": "2026-02-14T12:00:00+00:00",
+            "confirmed_at": "2026-02-14T12:02:00+00:00",
+            "created_at": "2026-02-14T12:00:00+00:00",
+            "updated_at": "2026-02-14T12:02:00+00:00",
+            "trace_id": "trace-verification-12345",
+        }
+
+    monkeypatch.setattr(gateway_routes, "_request_blockchain_verification", fake_verification_request)
+
     verification = client.get(
         "/maintenance/mnt_20260214_0012/verification",
         headers=AUTH_HEADERS,
     )
     assert verification.status_code == 200
     assert verification.json()["data"]["verification_status"] == "confirmed"
+    assert verification.json()["data"]["confirmations"] == 3
 
 
 def test_rate_limit_enforced() -> None:
@@ -340,3 +369,288 @@ def test_asset_telemetry_maps_unavailable_error(monkeypatch: pytest.MonkeyPatch)
     response = client.get("/telemetry/asset_w12_bridge_0042/latest", headers=AUTH_HEADERS)
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "SENSOR_INGESTION_UNAVAILABLE"
+
+
+def test_track_maintenance_verification_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_verification_request(*, trace_id: str, method: str, path: str, body: dict | None = None) -> dict:
+        del trace_id, body
+        assert method == "POST"
+        assert path == "/verifications/mnt_20260214_0012/track"
+        return {
+            "verification": {
+                "verification_id": "vfy_20260214_0001",
+                "command_id": str(uuid4()),
+                "maintenance_id": "mnt_20260214_0012",
+                "asset_id": "asset_w12_bridge_0042",
+                "verification_status": "confirmed",
+                "evidence_hash": "0x" + "a" * 64,
+                "tx_hash": "0x" + "b" * 64,
+                "network": "sepolia",
+                "contract_address": "0x" + "1" * 40,
+                "chain_id": 11155111,
+                "block_number": 123456,
+                "confirmations": 3,
+                "required_confirmations": 3,
+                "submitted_at": "2026-02-14T12:00:00+00:00",
+                "confirmed_at": "2026-02-14T12:03:00+00:00",
+                "created_at": "2026-02-14T12:00:00+00:00",
+                "updated_at": "2026-02-14T12:03:00+00:00",
+                "trace_id": "trace-verification-12345",
+            },
+            "maintenance_verified_event": {
+                "event_type": "maintenance.verified.blockchain",
+            },
+        }
+
+    monkeypatch.setattr(gateway_routes, "_request_blockchain_verification", fake_verification_request)
+
+    response = client.post(
+        "/maintenance/mnt_20260214_0012/verification/track",
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["verification_status"] == "confirmed"
+    assert body["data"]["confirmations"] == 3
+    assert body["maintenance_verified_event"]["event_type"] == "maintenance.verified.blockchain"
+
+
+def test_automation_incidents_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_request_orchestration(*, trace_id: str, method: str, path: str, body: dict | None = None) -> dict:
+        del trace_id, body
+        assert method == "GET"
+        assert path == "/incidents"
+        return {
+            "items": [
+                {
+                    "workflow_id": "wf_20260214_120001_0001",
+                    "asset_id": "asset_w12_bridge_0042",
+                    "risk_priority": "critical",
+                    "escalation_stage": "management_notified",
+                    "status": "inspection_requested",
+                    "trigger_reason": "risk_level=Critical",
+                    "created_at": "2026-02-14T12:00:01+00:00",
+                    "updated_at": "2026-02-14T12:00:01+00:00",
+                    "authority_notified_at": "2026-02-14T12:00:01+00:00",
+                    "authority_ack_deadline_at": "2026-02-14T12:30:01+00:00",
+                    "management_dispatch_ids": ["dsp_20260214_0001"],
+                    "police_dispatch_ids": [],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(gateway_routes, "_request_orchestration", fake_request_orchestration)
+
+    response = client.get("/automation/incidents", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["data"]) == 1
+    assert body["data"][0]["escalation_stage"] == "management_notified"
+
+
+def test_automation_acknowledgement_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_request_orchestration(*, trace_id: str, method: str, path: str, body: dict | None = None) -> dict:
+        del trace_id
+        assert method == "POST"
+        assert path == "/incidents/wf_20260214_120001_0001/acknowledge"
+        assert body == {"acknowledged_by": "ops-chief-01", "ack_notes": "Maintenance team dispatched"}
+        return {
+            "workflow_id": "wf_20260214_120001_0001",
+            "escalation_stage": "acknowledged",
+            "acknowledged_at": "2026-02-14T12:10:01+00:00",
+            "acknowledged_by": "ops-chief-01",
+            "ack_notes": "Maintenance team dispatched",
+            "police_notified_at": None,
+        }
+
+    monkeypatch.setattr(gateway_routes, "_request_orchestration", fake_request_orchestration)
+
+    response = client.post(
+        "/automation/incidents/wf_20260214_120001_0001/acknowledge",
+        headers=AUTH_HEADERS,
+        json={"acknowledged_by": "ops-chief-01", "ack_notes": "Maintenance team dispatched"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["workflow_id"] == "wf_20260214_120001_0001"
+    assert body["data"]["escalation_stage"] == "acknowledged"
+
+
+def test_create_evidence_upload_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_report_generation(*, trace_id: str, method: str, path: str, body: dict | None = None) -> dict:
+        del trace_id
+        assert method == "POST"
+        assert path == "/maintenance/mnt_20260214_0012/evidence/uploads"
+        assert body is not None
+        return {
+            "evidence": {
+                "evidence_id": "evd_20260215_0001",
+                "maintenance_id": "mnt_20260214_0012",
+                "asset_id": "asset_w12_bridge_0042",
+                "filename": "repair_report.pdf",
+                "content_type": "application/pdf",
+                "size_bytes": 20480,
+                "storage_uri": "gs://bucket/infraguard/evidence/mnt_20260214_0012/evd_20260215_0001/repair_report.pdf",
+                "storage_object_path": "infraguard/evidence/mnt_20260214_0012/evd_20260215_0001/repair_report.pdf",
+                "sha256_hex": None,
+                "uploaded_by": "gateway-client",
+                "uploaded_at": "2026-02-15T05:00:00+00:00",
+                "finalized_at": None,
+                "status": "upload_pending",
+                "category": "inspection_report",
+                "notes": "Bridge deck crack repair report",
+            },
+            "upload_url": "https://upload.example.dev/signed",
+            "upload_method": "PUT",
+            "upload_headers": {"Content-Type": "application/pdf"},
+            "expires_at": "2026-02-15T05:15:00+00:00",
+        }
+
+    monkeypatch.setattr(gateway_routes, "_request_report_generation", fake_report_generation)
+
+    response = client.post(
+        "/maintenance/mnt_20260214_0012/evidence/uploads",
+        headers=AUTH_HEADERS,
+        json={
+            "asset_id": "asset_w12_bridge_0042",
+            "filename": "repair_report.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 20480,
+            "category": "inspection_report",
+            "notes": "Bridge deck crack repair report",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["evidence_id"] == "evd_20260215_0001"
+    assert body["upload_method"] == "PUT"
+    assert body["upload_headers"]["Content-Type"] == "application/pdf"
+
+
+def test_finalize_evidence_upload_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_report_generation(*, trace_id: str, method: str, path: str, body: dict | None = None) -> dict:
+        del trace_id
+        assert method == "POST"
+        assert path == "/maintenance/mnt_20260214_0012/evidence/evd_20260215_0001/finalize"
+        assert body == {"uploaded_by": "org-admin-01"}
+        return {
+            "evidence": {
+                "evidence_id": "evd_20260215_0001",
+                "maintenance_id": "mnt_20260214_0012",
+                "asset_id": "asset_w12_bridge_0042",
+                "filename": "repair_report.pdf",
+                "content_type": "application/pdf",
+                "size_bytes": 20480,
+                "storage_uri": "gs://bucket/infraguard/evidence/mnt_20260214_0012/evd_20260215_0001/repair_report.pdf",
+                "storage_object_path": "infraguard/evidence/mnt_20260214_0012/evd_20260215_0001/repair_report.pdf",
+                "sha256_hex": "a" * 64,
+                "uploaded_by": "org-admin-01",
+                "uploaded_at": "2026-02-15T05:00:00+00:00",
+                "finalized_at": "2026-02-15T05:02:00+00:00",
+                "status": "finalized",
+                "category": "inspection_report",
+                "notes": "Bridge deck crack repair report",
+            }
+        }
+
+    monkeypatch.setattr(gateway_routes, "_request_report_generation", fake_report_generation)
+
+    response = client.post(
+        "/maintenance/mnt_20260214_0012/evidence/evd_20260215_0001/finalize",
+        headers=AUTH_HEADERS,
+        json={"uploaded_by": "org-admin-01"},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "finalized"
+
+
+def test_list_evidence_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_report_generation(*, trace_id: str, method: str, path: str, body: dict | None = None) -> dict:
+        del trace_id, body
+        assert method == "GET"
+        assert path == "/maintenance/mnt_20260214_0012/evidence"
+        return {
+            "items": [
+                {
+                    "evidence_id": "evd_20260215_0001",
+                    "maintenance_id": "mnt_20260214_0012",
+                    "asset_id": "asset_w12_bridge_0042",
+                    "filename": "repair_report.pdf",
+                    "content_type": "application/pdf",
+                    "size_bytes": 20480,
+                    "storage_uri": "gs://bucket/infraguard/evidence/mnt_20260214_0012/evd_20260215_0001/repair_report.pdf",
+                    "storage_object_path": "infraguard/evidence/mnt_20260214_0012/evd_20260215_0001/repair_report.pdf",
+                    "sha256_hex": "a" * 64,
+                    "uploaded_by": "org-admin-01",
+                    "uploaded_at": "2026-02-15T05:00:00+00:00",
+                    "finalized_at": "2026-02-15T05:02:00+00:00",
+                    "status": "finalized",
+                    "category": "inspection_report",
+                    "notes": "Bridge deck crack repair report",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(gateway_routes, "_request_report_generation", fake_report_generation)
+
+    response = client.get(
+        "/maintenance/mnt_20260214_0012/evidence",
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+    assert len(response.json()["data"]) == 1
+
+
+def test_submit_verification_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+
+    def fake_request_orchestration(*, trace_id: str, method: str, path: str, body: dict | None = None) -> dict:
+        del trace_id
+        assert method == "POST"
+        assert path == "/maintenance/mnt_20260214_0012/verification/submit"
+        assert body is not None
+        return {
+            "workflow_id": "wf_20260214_120001_0001",
+            "maintenance_id": "mnt_20260214_0012",
+            "verification_status": "submitted",
+            "verification_maintenance_id": "mnt_20260214_0012",
+            "verification_tx_hash": "0x" + "b" * 64,
+            "verification_error": None,
+            "verification_updated_at": "2026-02-15T05:10:00+00:00",
+        }
+
+    monkeypatch.setattr(gateway_routes, "_request_orchestration", fake_request_orchestration)
+
+    response = client.post(
+        "/maintenance/mnt_20260214_0012/verification/submit",
+        headers=AUTH_HEADERS,
+        json={},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["verification_status"] == "submitted"
+
+
+def test_evidence_routes_require_organization_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setenv("API_GATEWAY_AUTH_BEARER_TOKENS_CSV", "dev-token,operator-token")
+    monkeypatch.setenv(
+        "API_GATEWAY_AUTH_TOKEN_ROLES_CSV",
+        "dev-token:organization|operator,operator-token:operator",
+    )
+    headers = {"Authorization": "Bearer operator-token", "x-trace-id": "trc_test_gateway_001"}
+
+    response = client.get("/maintenance/mnt_20260214_0012/evidence", headers=headers)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"

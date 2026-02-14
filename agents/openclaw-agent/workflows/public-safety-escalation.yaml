@@ -1,0 +1,17 @@
+name: public-safety-escalation
+version: v1
+trigger_event: inspection.requested
+
+schedule:
+  interval_seconds: 30
+  max_cycles: 60
+
+steps:
+  - action: await_authority_ack
+  - action: escalate_to_police_if_timeout
+
+outputs:
+  commands:
+    - notification.dispatch
+  events:
+    - notification.delivery.status

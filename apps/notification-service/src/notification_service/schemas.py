@@ -16,6 +16,7 @@ class NotificationDispatchPayload(BaseModel):
     """Payload for `notification.dispatch` command."""
 
     channel: Channel
+    fallback_channels: list[Channel] | None = None
     recipient: str = Field(min_length=1, max_length=256)
     message: str = Field(min_length=1, max_length=2000)
     severity: Severity
