@@ -13,6 +13,415 @@ class DashboardApiError extends Error {
   }
 }
 
+const FIREBASE_CONFIG_STORAGE_KEY = "infraguard.firebase.nodes.config.v1";
+const FIREBASE_DEFAULT_CONFIG = Object.freeze({
+  enabled: false,
+  dbUrl: "",
+  basePath: "infraguard/telemetry",
+  authToken: "",
+});
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value ?? 0)));
+}
+
+function safeIso(value) {
+  const date = new Date(value ?? "");
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString();
+  }
+  return date.toISOString();
+}
+
+function normalizeFirebaseDbUrl(dbUrl) {
+  return String(dbUrl || "").trim().replace(/\/+$/, "");
+}
+
+function normalizeFirebaseBasePath(basePath) {
+  const cleaned = String(basePath || "").trim().replace(/^\/+/, "").replace(/\/+$/, "");
+  return cleaned || FIREBASE_DEFAULT_CONFIG.basePath;
+}
+
+function encodeFirebasePath(path) {
+  return path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function parseFirebaseNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function firstFinite(...values) {
+  for (const value of values) {
+    const numeric = parseFirebaseNumber(value);
+    if (numeric !== null) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
+function parseFirebaseCoordinates(latest) {
+  const location = latest?.location || {};
+  const lat = firstFinite(location.lat, location.latitude, latest?.lat, latest?.latitude);
+  const lon = firstFinite(location.lon, location.lng, location.longitude, latest?.lon, latest?.lng, latest?.longitude);
+  if (lat === null || lon === null) {
+    return null;
+  }
+  return { lat, lon };
+}
+
+function toIsoFromLatest(latest) {
+  const candidates = [
+    latest?.captured_at,
+    latest?.evaluated_at,
+    latest?.timestamp,
+    latest?.recorded_at,
+    latest?.created_at,
+    latest?.updated_at,
+  ];
+  for (const value of candidates) {
+    if (value) {
+      return safeIso(value);
+    }
+  }
+  return new Date().toISOString();
+}
+
+function parseFirebaseSensorTelemetry(latest) {
+  const buildMetric = (candidate, fallbackUnit, precision, label) => {
+    const numeric =
+      typeof candidate === "object" && candidate !== null
+        ? firstFinite(candidate.value)
+        : firstFinite(candidate);
+    if (numeric === null) {
+      return null;
+    }
+    const value = Number(numeric.toFixed(precision));
+    const samplesCandidate =
+      typeof candidate === "object" && candidate !== null && Array.isArray(candidate.samples)
+        ? candidate.samples
+        : [value];
+    const samples = samplesCandidate
+      .map((sample) => parseFirebaseNumber(sample))
+      .filter((sample) => sample !== null)
+      .map((sample) => Number(sample.toFixed(precision)));
+    return {
+      value,
+      unit:
+        typeof candidate === "object" && candidate !== null && typeof candidate.unit === "string"
+          ? candidate.unit
+          : fallbackUnit,
+      delta: `live ${label}`,
+      samples: samples.length ? samples : [value],
+    };
+  };
+
+  const strain = buildMetric(
+    latest?.sensors?.strain ?? latest?.strain ?? latest?.strain_me,
+    "me",
+    1,
+    "variance",
+  );
+  const vibration = buildMetric(
+    latest?.sensors?.vibration ?? latest?.vibration ?? latest?.vibration_mms,
+    "mm/s",
+    1,
+    "trend",
+  );
+  const temperature = buildMetric(
+    latest?.sensors?.temperature ?? latest?.temperature ?? latest?.temperature_c,
+    "C",
+    1,
+    "spike",
+  );
+  const tilt = buildMetric(
+    latest?.sensors?.tilt ?? latest?.tilt ?? latest?.tilt_deg,
+    "deg",
+    2,
+    "drift",
+  );
+
+  return {
+    strain,
+    vibration,
+    temperature,
+    tilt,
+  };
+}
+
+function parseFirebaseNode(nodeId, nodeValue) {
+  if (nodeValue === null || typeof nodeValue !== "object") {
+    return null;
+  }
+  const latest = nodeValue.latest && typeof nodeValue.latest === "object" ? nodeValue.latest : nodeValue;
+  const assetId = String(
+    latest.asset_id || latest.assetId || latest.device_id || latest.deviceId || nodeId,
+  );
+  const nodeZone = String(latest.zone || latest.region || latest.country || "global").toLowerCase();
+  const location = parseFirebaseCoordinates(latest);
+  const latestAt = toIsoFromLatest(latest);
+  const telemetry = parseFirebaseSensorTelemetry(latest);
+  const historyCount = nodeValue.history && typeof nodeValue.history === "object"
+    ? Object.keys(nodeValue.history).length
+    : 0;
+  const failureProbability = clamp01(
+    firstFinite(latest.failure_probability_72h, latest.failureProbability72h, latest.risk_probability) ?? 0,
+  );
+  const healthScore = clamp01(
+    firstFinite(latest.health_score, latest.healthScore, 1 - failureProbability) ?? (1 - failureProbability),
+  );
+
+  return {
+    nodeId: String(nodeId),
+    assetId,
+    assetName: String(latest.asset_name || latest.assetName || assetId),
+    zone: nodeZone,
+    location,
+    latestAt,
+    telemetry,
+    historyCount,
+    failureProbability72h: failureProbability,
+    healthScore,
+    rawLatest: latest,
+  };
+}
+
+function createFirebaseDisconnectedState(config, message) {
+  return {
+    ...config,
+    connected: false,
+    lastFetchedAt: null,
+    nodes: [],
+    mappedNodes: 0,
+    totalNodes: 0,
+    message,
+    errorCode: null,
+  };
+}
+
+function mergeFirebaseIntoPayload(payload, firebaseState) {
+  const merged = {
+    ...payload,
+    firebaseNodes: firebaseState,
+  };
+
+  const existingIds = new Set((payload.assets || []).map((asset) => asset.asset_id));
+  const assets = [...(payload.assets || [])];
+  const healthByAsset = { ...(payload.healthByAsset || {}) };
+  const forecastByAsset = { ...(payload.forecastByAsset || {}) };
+  const sensorsByAsset = { ...(payload.sensorsByAsset || {}) };
+  const maintenanceLogByAsset = { ...(payload.maintenanceLogByAsset || {}) };
+
+  (firebaseState.nodes || []).forEach((node) => {
+    const assetId = node.assetId;
+    const location = node.location || { lat: 0, lon: 0 };
+    const severity =
+      node.failureProbability72h >= 0.8
+        ? "critical"
+        : node.failureProbability72h >= 0.6
+          ? "warning"
+          : node.failureProbability72h >= 0.35
+            ? "watch"
+            : "healthy";
+
+    if (!existingIds.has(assetId)) {
+      assets.push({
+        asset_id: assetId,
+        name: node.assetName || assetId,
+        asset_type: "iot-node",
+        status: "active",
+        zone: node.zone || "global",
+        location,
+      });
+      existingIds.add(assetId);
+    }
+
+    if (!healthByAsset[assetId]) {
+      healthByAsset[assetId] = {
+        asset_id: assetId,
+        evaluated_at: node.latestAt,
+        health_score: node.healthScore,
+        risk_level: severity,
+        failure_probability_72h: node.failureProbability72h,
+        anomaly_flag: node.failureProbability72h >= 0.6 ? 1 : 0,
+        severity,
+        components: {
+          mechanical_stress: clamp01(firstFinite(node.telemetry?.strain?.value, 0) / 20),
+          thermal_stress: clamp01((firstFinite(node.telemetry?.temperature?.value, 20) - 20) / 25),
+          fatigue: clamp01(firstFinite(node.telemetry?.vibration?.value, 0) / 10),
+          environmental_exposure: clamp01(firstFinite(node.telemetry?.tilt?.value, 0) / 1.2),
+        },
+      };
+    }
+
+    if (!forecastByAsset[assetId]) {
+      forecastByAsset[assetId] = buildSyntheticForecast(assetId, healthByAsset[assetId]);
+    }
+
+    if (!sensorsByAsset[assetId]) {
+      sensorsByAsset[assetId] = {
+        strain: node.telemetry?.strain,
+        vibration: node.telemetry?.vibration,
+        temperature: node.telemetry?.temperature,
+        tilt: node.telemetry?.tilt,
+      };
+    }
+
+    if (!maintenanceLogByAsset[assetId]) {
+      maintenanceLogByAsset[assetId] = [
+        {
+          timestamp: node.latestAt,
+          unit: String(node.nodeId).toUpperCase(),
+          operator: "FIREBASE_NODE",
+          status: "INGESTED",
+          verified: true,
+        },
+      ];
+    }
+  });
+
+  merged.assets = assets;
+  merged.healthByAsset = healthByAsset;
+  merged.forecastByAsset = forecastByAsset;
+  merged.sensorsByAsset = sensorsByAsset;
+  merged.maintenanceLogByAsset = maintenanceLogByAsset;
+  return merged;
+}
+
+export function getFirebaseNodesConfig() {
+  try {
+    const raw = window.localStorage.getItem(FIREBASE_CONFIG_STORAGE_KEY);
+    if (!raw) {
+      return { ...FIREBASE_DEFAULT_CONFIG };
+    }
+    const parsed = JSON.parse(raw);
+    return {
+      ...FIREBASE_DEFAULT_CONFIG,
+      ...(parsed && typeof parsed === "object" ? parsed : {}),
+      dbUrl: normalizeFirebaseDbUrl(parsed?.dbUrl),
+      basePath: normalizeFirebaseBasePath(parsed?.basePath),
+      authToken: typeof parsed?.authToken === "string" ? parsed.authToken : "",
+      enabled: Boolean(parsed?.enabled),
+    };
+  } catch (_error) {
+    return { ...FIREBASE_DEFAULT_CONFIG };
+  }
+}
+
+export function saveFirebaseNodesConfig(nextConfig) {
+  const merged = {
+    ...getFirebaseNodesConfig(),
+    ...(nextConfig || {}),
+  };
+  const normalized = {
+    enabled: Boolean(merged.enabled),
+    dbUrl: normalizeFirebaseDbUrl(merged.dbUrl),
+    basePath: normalizeFirebaseBasePath(merged.basePath),
+    authToken: typeof merged.authToken === "string" ? merged.authToken.trim() : "",
+  };
+  try {
+    window.localStorage.setItem(FIREBASE_CONFIG_STORAGE_KEY, JSON.stringify(normalized));
+  } catch (_error) {
+    // Ignore storage errors and continue runtime-only.
+  }
+  return normalized;
+}
+
+export function clearFirebaseNodesConfig() {
+  const cleared = { ...FIREBASE_DEFAULT_CONFIG };
+  try {
+    window.localStorage.setItem(FIREBASE_CONFIG_STORAGE_KEY, JSON.stringify(cleared));
+  } catch (_error) {
+    // Ignore storage errors.
+  }
+  return cleared;
+}
+
+async function fetchFirebaseNodesRuntime(config) {
+  const normalizedConfig = {
+    enabled: Boolean(config.enabled),
+    dbUrl: normalizeFirebaseDbUrl(config.dbUrl),
+    basePath: normalizeFirebaseBasePath(config.basePath),
+    authToken: typeof config.authToken === "string" ? config.authToken.trim() : "",
+  };
+
+  if (!normalizedConfig.enabled) {
+    return createFirebaseDisconnectedState(normalizedConfig, "Firebase connector is disabled.");
+  }
+  if (!normalizedConfig.dbUrl) {
+    return createFirebaseDisconnectedState(normalizedConfig, "Firebase DB URL is required.");
+  }
+
+  const encodedPath = encodeFirebasePath(normalizedConfig.basePath);
+  const params = new URLSearchParams();
+  if (normalizedConfig.authToken) {
+    params.set("auth", normalizedConfig.authToken);
+  }
+  const endpoint = `${normalizedConfig.dbUrl}/${encodedPath}.json${params.toString() ? `?${params.toString()}` : ""}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    Math.max(DASHBOARD_CONFIG.requestTimeoutMs, DASHBOARD_CONFIG.firebaseRefreshIntervalMs),
+  );
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return {
+        ...createFirebaseDisconnectedState(normalizedConfig, `Firebase HTTP ${response.status}.`),
+        errorCode: `HTTP_${response.status}`,
+      };
+    }
+    const body = await response.json();
+    if (!body || typeof body !== "object") {
+      return {
+        ...createFirebaseDisconnectedState(normalizedConfig, "Firebase returned an empty payload."),
+        errorCode: "EMPTY_PAYLOAD",
+      };
+    }
+
+    const nodes = Object.entries(body)
+      .map(([nodeId, nodeValue]) => parseFirebaseNode(nodeId, nodeValue))
+      .filter((node) => node !== null)
+      .sort((left, right) => right.latestAt.localeCompare(left.latestAt));
+
+    const mappedNodes = nodes.filter((node) => !!node.assetId).length;
+
+    return {
+      ...normalizedConfig,
+      connected: true,
+      lastFetchedAt: new Date().toISOString(),
+      nodes,
+      mappedNodes,
+      totalNodes: nodes.length,
+      message: nodes.length
+        ? `Loaded ${nodes.length} nodes from Firebase path ${normalizedConfig.basePath}.`
+        : "Connected to Firebase, but no nodes found at configured path.",
+      errorCode: null,
+    };
+  } catch (error) {
+    const message =
+      error?.name === "AbortError"
+        ? "Firebase request timed out."
+        : `Firebase request failed: ${error?.message || "unknown error"}`;
+    return {
+      ...createFirebaseDisconnectedState(normalizedConfig, message),
+      errorCode: error?.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function normalizeProbability(value) {
   return Math.max(0, Math.min(1, Number(value ?? 0)));
 }
@@ -276,12 +685,19 @@ async function fetchJson(path, { auth = true, method = "GET", body = undefined }
 
 function cloneMockPayload(error = null) {
   const payload = JSON.parse(JSON.stringify(MOCK_DATA));
+  const firebaseConfig = getFirebaseNodesConfig();
   payload.generatedAt = new Date().toISOString();
   payload.activeMaintenanceId =
     payload.activeMaintenanceId || payload.verification?.maintenance_id || DASHBOARD_CONFIG.maintenanceIdFallback;
   payload.walletConnection = emptyWalletStatus();
   payload.verificationState = payload.verificationState || null;
   payload.evidenceByMaintenanceId = payload.evidenceByMaintenanceId || {};
+  payload.firebaseNodes = createFirebaseDisconnectedState(
+    firebaseConfig,
+    firebaseConfig.enabled
+      ? "Firebase configured. Refresh to load live nodes."
+      : "Firebase connector is disabled.",
+  );
   payload.error = error
     ? {
         code: error.code || "MOCK_FALLBACK",
@@ -293,6 +709,7 @@ function cloneMockPayload(error = null) {
 }
 
 export async function loadDashboardData(previousPayload = null) {
+  const firebaseConfig = getFirebaseNodesConfig();
   try {
     const [gatewayHealth, assetsResponse] = await Promise.all([
       fetchJson("/health", { auth: false }),
@@ -397,6 +814,14 @@ export async function loadDashboardData(previousPayload = null) {
         }
       : null;
 
+    let lstmRealtime = null;
+    try {
+      const lstmResponse = await fetchJson("/lstm/realtime", { auth: true });
+      lstmRealtime = lstmResponse.data ?? null;
+    } catch (_error) {
+      lstmRealtime = null;
+    }
+
     const payload = {
       source: "live",
       stale: false,
@@ -417,16 +842,28 @@ export async function loadDashboardData(previousPayload = null) {
           }
         : {},
       automationIncidents,
+      lstmRealtime,
       blockchainConnection: defaultBlockchainConnection(verification),
       walletConnection: emptyWalletStatus(),
     };
 
-    return { payload, stale: false };
+    const firebaseState = await fetchFirebaseNodesRuntime(firebaseConfig);
+    const mergedPayload = mergeFirebaseIntoPayload(payload, firebaseState);
+
+    return { payload: mergedPayload, stale: false };
   } catch (error) {
     if (previousPayload) {
+      const firebaseState = await fetchFirebaseNodesRuntime(firebaseConfig);
+      const refreshedPrevious = mergeFirebaseIntoPayload(
+        {
+          ...previousPayload,
+          walletConnection: previousPayload.walletConnection || emptyWalletStatus(),
+        },
+        firebaseState,
+      );
       return {
         payload: {
-          ...previousPayload,
+          ...refreshedPrevious,
           stale: true,
           generatedAt: new Date().toISOString(),
           error: {

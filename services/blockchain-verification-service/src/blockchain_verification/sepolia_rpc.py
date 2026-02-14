@@ -67,7 +67,12 @@ class SepoliaRpcClient:
             url=self._rpc_url,
             data=raw,
             method="POST",
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                # Some public RPC providers block default Python urllib clients.
+                "User-Agent": "InfraGuard-SepoliaRpc/1.0 (+https://localhost)",
+            },
         )
 
         try:

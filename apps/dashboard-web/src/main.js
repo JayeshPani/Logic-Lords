@@ -8,7 +8,7 @@ import {
   uploadAndFinalizeEvidence,
 } from "./api.js";
 import { createViewModel } from "./state.js";
-import { connectMetaMaskWallet } from "./wallet.js";
+import { connectMetaMaskWallet, emptyWalletStatus } from "./wallet.js";
 import { renderClock, renderDashboard } from "./ui.js";
 
 let refreshHandle = null;
@@ -24,6 +24,8 @@ let verificationTrackInFlight = false;
 let evidenceUploadInFlight = false;
 let verificationSubmitInFlight = false;
 let selectedEvidenceFileName = null;
+let selectedNodeId = null;
+let activateTabRef = null;
 
 function setupSectionTabs(onTabChange) {
   const triggers = Array.from(document.querySelectorAll(".tab-trigger"));
@@ -75,7 +77,14 @@ function setupSectionTabs(onTabChange) {
     if (typeof onTabChange === "function") {
       onTabChange(target);
     }
+
+    const mainContent = document.getElementById("main-content");
+    if (mainContent) {
+      mainContent.scrollTop = 0;
+    }
   };
+
+  activateTabRef = activateTab;
 
   triggers.forEach((trigger) => {
     trigger.addEventListener("click", () => {
@@ -117,14 +126,41 @@ function renderCurrent() {
     isUploadingEvidence: evidenceUploadInFlight,
     isSubmittingVerification: verificationSubmitInFlight,
     selectedEvidenceFileName,
-    onSelectAsset: (assetId) => {
+    onSelectAsset: (assetId, options = {}) => {
       selectedAssetId = assetId;
+      selectedNodeId = null;
+      if (options.navigateToAssetDetail && typeof activateTabRef === "function") {
+        activateTabRef("asset");
+        return;
+      }
       renderCurrent();
     },
+    onSelectNode: (nodeId) => {
+      selectedNodeId = nodeId;
+      renderCurrent();
+    },
+    selectedNodeId,
     onAcknowledgeIncident: (workflowId) => {
       void acknowledgeWorkflow(workflowId);
     },
   });
+
+  const accountWalletStatus = document.getElementById("account-wallet-status");
+  const accountWalletAddress = document.getElementById("account-wallet-address");
+  const accountWalletChain = document.getElementById("account-wallet-chain");
+  const accountChainStatus = document.getElementById("account-chain-status");
+  if (accountWalletStatus) {
+    accountWalletStatus.textContent = viewModel?.walletConnection?.connected ? "Connected" : "Disconnected";
+  }
+  if (accountWalletAddress) {
+    accountWalletAddress.textContent = viewModel?.walletConnection?.wallet_address || "-";
+  }
+  if (accountWalletChain) {
+    accountWalletChain.textContent = String(viewModel?.walletConnection?.chain_id ?? "-");
+  }
+  if (accountChainStatus) {
+    accountChainStatus.textContent = viewModel?.blockchainConnection?.connected ? "Reachable" : "Unavailable";
+  }
 }
 
 async function acknowledgeWorkflow(workflowId) {
@@ -461,6 +497,92 @@ function setupInteractions() {
   }
 }
 
+function setupHeaderActions() {
+  const profileButton = document.getElementById("profile-btn");
+  const accountModal = document.getElementById("account-modal");
+  const accountCloseButton = document.getElementById("account-close-btn");
+  const profileNote = document.getElementById("profile-action-note");
+  const refreshButton = document.getElementById("profile-refresh-btn");
+  const disconnectWalletButton = document.getElementById("profile-disconnect-wallet-btn");
+
+  if (!profileButton || !accountModal) {
+    return;
+  }
+
+  const openAccountModal = () => {
+    accountModal.hidden = false;
+    profileButton.setAttribute("aria-expanded", "true");
+  };
+
+  const closeAccountModal = () => {
+    accountModal.hidden = true;
+    profileButton.setAttribute("aria-expanded", "false");
+  };
+
+  profileButton.addEventListener("click", () => {
+    const isOpen = !accountModal.hidden;
+    if (isOpen) {
+      closeAccountModal();
+      return;
+    }
+    openAccountModal();
+  });
+
+  accountModal.querySelectorAll("[data-nav-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.getAttribute("data-nav-target");
+      if (target && typeof activateTabRef === "function") {
+        activateTabRef(target);
+      }
+      closeAccountModal();
+    });
+  });
+
+  if (refreshButton) {
+    refreshButton.addEventListener("click", async () => {
+      if (profileNote) {
+        profileNote.textContent = "Refreshing dashboard data...";
+      }
+      await refreshDashboard();
+      if (profileNote) {
+        profileNote.textContent = "Data refreshed.";
+      }
+    });
+  }
+
+  if (disconnectWalletButton) {
+    disconnectWalletButton.addEventListener("click", () => {
+      lastWalletConnection = emptyWalletStatus();
+      renderCurrent();
+      if (profileNote) {
+        profileNote.textContent = "Wallet status reset in dashboard view.";
+      }
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Node)) {
+      return;
+    }
+    if (target instanceof HTMLElement && target.dataset.accountClose === "true") {
+      closeAccountModal();
+    }
+  });
+
+  if (accountCloseButton) {
+    accountCloseButton.addEventListener("click", () => {
+      closeAccountModal();
+    });
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeAccountModal();
+    }
+  });
+}
+
 async function boot() {
   setupSectionTabs(() => {
     renderCurrent();
@@ -470,6 +592,7 @@ async function boot() {
 
   await refreshDashboard();
   setupInteractions();
+  setupHeaderActions();
 
   if (refreshHandle) {
     clearInterval(refreshHandle);

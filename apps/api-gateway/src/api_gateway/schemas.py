@@ -423,4 +423,56 @@ class AutomationAcknowledgeResponse(BaseModel):
     """Acknowledgement response wrapper."""
 
     data: AutomationAcknowledgeResult
+
+
+class LstmRealtimeSensorPoint(BaseModel):
+    """One simulated sensor sample used by LSTM history."""
+
+    timestamp: datetime
+    strain_value: float
+    vibration_rms: float
+    temperature: float
+    humidity: float = Field(ge=0, le=100)
+
+
+class LstmForecastPoint(BaseModel):
+    """One forecast point for next horizon."""
+
+    hour: float = Field(ge=0, le=168)
+    probability: float = Field(ge=0, le=1)
+
+
+class LstmRealtimeModelInfo(BaseModel):
+    """Model metadata for realtime forecast."""
+
+    name: str
+    version: str
+    mode: str
+    confidence: float = Field(ge=0, le=1)
+
+
+class LstmRealtimeData(BaseModel):
+    """Realtime LSTM feed exposed to dashboard overview."""
+
+    asset_id: str
+    generated_at: datetime
+    history_window_hours: int = Field(default=48, ge=1, le=168)
+    forecast_horizon_hours: int = Field(default=72, ge=1, le=168)
+    current_failure_probability_72h: float = Field(ge=0, le=1)
+    history: list[LstmRealtimeSensorPoint] = Field(default_factory=list)
+    forecast_points: list[LstmForecastPoint] = Field(default_factory=list)
+    model: LstmRealtimeModelInfo
+    source: str = "simulator"
+
+
+class LstmRealtimeIngestRequest(BaseModel):
+    """Write payload for simulator ingestion endpoint."""
+
+    data: LstmRealtimeData
+
+
+class LstmRealtimeResponse(BaseModel):
+    """Read response for dashboard realtime feed."""
+
+    data: LstmRealtimeData
     meta: ApiMeta

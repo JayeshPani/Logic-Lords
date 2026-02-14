@@ -49,6 +49,10 @@
             <iconify-icon icon="lucide:map-pinned"></iconify-icon>
             <span>City Map</span>
           </button>
+          <button class="nav-item tab-trigger" type="button" data-tab-target="nodes" aria-selected="false">
+            <iconify-icon icon="lucide:radio-tower"></iconify-icon>
+            <span>Nodes</span>
+          </button>
           <button class="nav-item tab-trigger" type="button" data-tab-target="maintenance" aria-selected="false">
             <iconify-icon icon="lucide:clipboard-list"></iconify-icon>
             <span>Maintenance</span>
@@ -89,16 +93,14 @@
               <div class="mono date" id="clock-date">-</div>
               <div class="mono time" id="clock-time">-</div>
             </div>
-            <button class="icon-btn" type="button" title="Notifications">
-              <iconify-icon icon="lucide:bell"></iconify-icon>
-            </button>
-            <div class="avatar-ring">
+            <button id="profile-btn" class="profile-btn avatar-ring" type="button" aria-label="Open account" aria-expanded="false" aria-controls="account-modal">
               <img
                 src="https://api.dicebear.com/7.x/avataaars/svg?seed=Admin"
                 alt="Admin profile"
                 class="avatar"
               />
-            </div>
+            </button>
+
           </div>
         </header>
 
@@ -113,7 +115,6 @@
           <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="map" aria-selected="false">City Map</button>
           <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="maintenance" aria-selected="false">Maintenance</button>
         </div>
-
         <div class="tab-panels">
           <section class="tab-panel tab-panel-active" id="tab-overview" data-tab-panel="overview" aria-label="Overview">
             <section class="ops-kpi-grid" id="ops-kpi-grid" aria-label="Operational KPIs">
@@ -156,6 +157,34 @@
                 <p class="status-label">Last Sync</p>
                 <p class="status-value mono" id="status-sync-time">-</p>
               </div>
+            </section>
+
+            <section class="panel card-gradient overview-lstm-panel" aria-label="Realtime LSTM Forecast">
+              <div class="panel-head-row">
+                <div>
+                  <h3>Realtime LSTM Forecast (48h In / 72h Out)</h3>
+                  <p class="panel-subtitle">ESP32-style telemetry simulator with short-latency updates</p>
+                </div>
+              </div>
+              <div class="overview-lstm-kpis">
+                <div class="summary-item">
+                  <span class="summary-label">Asset</span>
+                  <span class="summary-value mono" id="overview-lstm-asset">-</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Current 72h Risk</span>
+                  <span class="summary-value mono" id="overview-lstm-current-risk">-</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Model</span>
+                  <span class="summary-value mono" id="overview-lstm-model">-</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Last Update</span>
+                  <span class="summary-value mono" id="overview-lstm-last-update">-</span>
+                </div>
+              </div>
+              <svg id="overview-lstm-chart" viewBox="0 0 980 260" aria-label="Realtime LSTM signal and forecast"></svg>
             </section>
           </section>
 
@@ -274,13 +303,13 @@
                 <p class="panel-subtitle">Length encodes contribution to overall risk</p>
                 <div id="selected-asset-components" class="risk-bars"></div>
               </article>
-
-              <article class="panel forecast-panel card-gradient">
-                <h3>72h Failure Forecast</h3>
-                <p class="panel-subtitle">Bands show watch/warning/critical thresholds</p>
-                <svg id="selected-asset-forecast" viewBox="0 0 760 240" aria-label="72-hour failure forecast chart"></svg>
-              </article>
             </section>
+
+            <article class="panel forecast-panel forecast-panel-wide card-gradient">
+              <h3>72h Failure Forecast</h3>
+              <p class="panel-subtitle">Bands show watch/warning/critical thresholds</p>
+              <svg id="selected-asset-forecast" viewBox="0 0 1200 300" aria-label="72-hour failure forecast chart"></svg>
+            </article>
           </section>
 
           <section class="tab-panel" id="tab-ledger" data-tab-panel="ledger" aria-label="Ledger and Wallet" hidden>
@@ -356,6 +385,87 @@
                 <div id="risk-map-legend" class="map-legend" aria-label="Map legend"></div>
               </div>
               <div id="risk-map" class="risk-map" role="img" aria-label="City asset risk map"></div>
+            </article>
+          </section>
+
+          <section class="tab-panel" id="tab-nodes" data-tab-panel="nodes" aria-label="Global Node Registry" hidden>
+            <article class="panel nodes-panel card-gradient">
+              <div class="panel-head-row table-head">
+                <div>
+                  <h3>Global Node Registry</h3>
+                  <p class="panel-subtitle">Connect Firebase Realtime DB and stream live nodes worldwide</p>
+                </div>
+                <span id="firebase-connection-status" class="timeline-value status-watch">DISCONNECTED</span>
+              </div>
+
+              <section class="nodes-connect-grid" aria-label="Firebase connection controls">
+                <label class="nodes-input-group">
+                  <span>Firebase DB URL</span>
+                  <input id="firebase-db-url" type="url" placeholder="https://your-project-default-rtdb.firebaseio.com" />
+                </label>
+                <label class="nodes-input-group">
+                  <span>Base Path</span>
+                  <input id="firebase-base-path" type="text" placeholder="infraguard/telemetry" />
+                </label>
+                <label class="nodes-input-group">
+                  <span>Auth Token (optional)</span>
+                  <input id="firebase-auth-token" type="password" placeholder="Firebase auth token" />
+                </label>
+                <div class="nodes-actions">
+                  <button id="firebase-connect-btn" class="verify-btn wallet-btn" type="button">Connect Firebase</button>
+                  <button id="firebase-disconnect-btn" class="ghost-btn danger-ghost" type="button">Disconnect</button>
+                </div>
+              </section>
+
+              <div class="nodes-kpi-grid">
+                <article class="kpi-card card-gradient">
+                  <p class="kpi-label">Discovered Nodes</p>
+                  <p class="kpi-value mono" id="nodes-total-count">0</p>
+                </article>
+                <article class="kpi-card card-gradient">
+                  <p class="kpi-label">Mapped Assets</p>
+                  <p class="kpi-value mono" id="nodes-mapped-count">0</p>
+                </article>
+                <article class="kpi-card card-gradient">
+                  <p class="kpi-label">Last Firebase Sync</p>
+                  <p class="kpi-value mono" id="nodes-last-sync">-</p>
+                </article>
+              </div>
+
+              <p id="nodes-status-message" class="connection-message status-watch" aria-live="polite">
+                Enter Firebase details and click Connect Firebase to load global node telemetry.
+              </p>
+
+              <div class="nodes-layout">
+                <div class="table-wrap custom-scrollbar">
+                  <table class="nodes-table">
+                    <thead>
+                      <tr>
+                        <th>Node ID</th>
+                        <th>Asset</th>
+                        <th>Zone</th>
+                        <th>Coordinates</th>
+                        <th>Last Seen</th>
+                        <th class="align-right">72h Risk</th>
+                      </tr>
+                    </thead>
+                    <tbody id="nodes-table-body"></tbody>
+                  </table>
+                </div>
+
+                <aside class="node-detail card-gradient" aria-label="Node telemetry detail">
+                  <h4 id="node-detail-title">Node Detail</h4>
+                  <p id="node-detail-subtitle" class="panel-subtitle">Select any node to inspect latest payload.</p>
+                  <div class="node-detail-grid">
+                    <div class="node-detail-row"><span>Asset Link</span><strong id="node-detail-asset-link">-</strong></div>
+                    <div class="node-detail-row"><span>Latest Timestamp</span><strong class="mono" id="node-detail-last-seen">-</strong></div>
+                    <div class="node-detail-row"><span>Temperature</span><strong class="mono" id="node-detail-temperature">-</strong></div>
+                    <div class="node-detail-row"><span>Vibration</span><strong class="mono" id="node-detail-vibration">-</strong></div>
+                    <div class="node-detail-row"><span>Tilt</span><strong class="mono" id="node-detail-tilt">-</strong></div>
+                  </div>
+                  <pre id="node-detail-json" class="node-json">No node selected.</pre>
+                </aside>
+              </div>
             </article>
           </section>
 
@@ -444,5 +554,39 @@
         </div>
       </main>
     </div>
+
+    <section id="account-modal" class="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title" hidden>
+      <div class="account-modal-backdrop" data-account-close="true"></div>
+      <article class="account-card card-gradient">
+        <header class="account-head">
+          <div>
+            <h3 id="account-title">Operator Account</h3>
+            <p class="mono account-subtitle">METRO-NORTH_UNIT_04</p>
+          </div>
+          <button id="account-close-btn" class="icon-btn" type="button" title="Close account panel">
+            <iconify-icon icon="lucide:x"></iconify-icon>
+          </button>
+        </header>
+
+        <div class="account-body">
+          <div class="account-row"><span>Name</span><strong>Ops Admin</strong></div>
+          <div class="account-row"><span>Role</span><strong>Infrastructure Supervisor</strong></div>
+          <div class="account-row"><span>Region</span><strong>Metro North</strong></div>
+          <div class="account-row"><span>Wallet Status</span><strong id="account-wallet-status">Unknown</strong></div>
+          <div class="account-row"><span>Wallet Address</span><strong class="mono" id="account-wallet-address">-</strong></div>
+          <div class="account-row"><span>Wallet Chain</span><strong class="mono" id="account-wallet-chain">-</strong></div>
+          <div class="account-row"><span>Sepolia Reachability</span><strong id="account-chain-status">Unknown</strong></div>
+        </div>
+
+        <div class="profile-actions">
+          <button class="ghost-btn" type="button" data-nav-target="overview">Open Overview</button>
+          <button class="ghost-btn" type="button" data-nav-target="ledger">Open Ledger</button>
+          <button class="ghost-btn" type="button" data-nav-target="maintenance">Open Maintenance</button>
+          <button id="profile-refresh-btn" class="ghost-btn" type="button">Refresh Data</button>
+          <button id="profile-disconnect-wallet-btn" class="ghost-btn danger-ghost" type="button">Disconnect Wallet View</button>
+        </div>
+        <p id="profile-action-note" class="profile-note mono" aria-live="polite"></p>
+      </article>
+    </section>
   </body>
 </html>
