@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "notification.delivery.status",
+  "allOf": [
+    {
+      "$ref": "../core/event-envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "notification.delivery.status"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "dispatch_id",
+            "command_id",
+            "status",
+            "channel",
+            "recipient",
+            "severity",
+            "attempts",
+            "retries_used",
+            "fallback_used",
+            "channels_tried",
+            "updated_at"
+          ],
+          "properties": {
+            "dispatch_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "command_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["delivered", "failed"]
+            },
+            "channel": {
+              "type": "string",
+              "enum": ["email", "sms", "webhook", "chat"]
+            },
+            "recipient": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["healthy", "watch", "warning", "critical"]
+            },
+            "attempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "retries_used": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fallback_used": {
+              "type": "boolean"
+            },
+            "channels_tried": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": ["email", "sms", "webhook", "chat"]
+              }
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "error": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["event_type", "data"]
+    }
+  ],
+  "unevaluatedProperties": false
+}

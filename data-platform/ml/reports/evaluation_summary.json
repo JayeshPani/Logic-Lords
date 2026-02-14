@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-13T18:11:57.567727+00:00",
+  "generated_at": "2026-02-14T06:11:45.363062+00:00",
   "lstm": {
     "report_out": "data-platform/ml/reports/lstm_backtest_report.json",
     "split_strategy_applied": "event_aware",

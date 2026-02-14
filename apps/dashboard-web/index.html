@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>InfraGuard Control Room</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/dashboard-static/styles.css" />
+    <script type="module" src="/dashboard-static/main.js"></script>
+    <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  </head>
+  <body class="bg-grid custom-scrollbar">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-wrap">
+          <div class="brand-icon glow-blue">
+            <iconify-icon icon="lucide:shield-check"></iconify-icon>
+          </div>
+          <h1 class="brand-title">InfraGuard</h1>
+        </div>
+
+        <nav class="side-nav">
+          <a class="nav-item nav-item-active" href="#" aria-current="page">
+            <iconify-icon icon="lucide:layout-dashboard"></iconify-icon>
+            <span>Dashboard</span>
+          </a>
+          <a class="nav-item" href="#bridges-panel">
+            <iconify-icon icon="lucide:bridge"></iconify-icon>
+            <span>Bridges</span>
+          </a>
+          <a class="nav-item" href="#alerts-panel">
+            <iconify-icon icon="lucide:triangle-alert"></iconify-icon>
+            <span>Alerts</span>
+          </a>
+          <a class="nav-item" href="#ledger-panel">
+            <iconify-icon icon="lucide:database-zap"></iconify-icon>
+            <span>Ledger</span>
+          </a>
+        </nav>
+
+        <div class="legend-panel card-gradient">
+          <p class="legend-title">Risk Legend</p>
+          <div class="legend-row"><span class="legend-dot risk-low"></span> Low (0-35%)</div>
+          <div class="legend-row"><span class="legend-dot risk-watch"></span> Watch (35-60%)</div>
+          <div class="legend-row"><span class="legend-dot risk-high"></span> High (60-80%)</div>
+          <div class="legend-row"><span class="legend-dot risk-critical"></span> Critical (80%+)</div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="top-header">
+          <div class="header-left">
+            <div class="command-center">
+              <span class="label">Command Center:</span>
+              <span class="value" id="command-center-value">METRO-NORTH_UNIT_04</span>
+            </div>
+            <div class="weather-pill">
+              <div class="weather-item">
+                <iconify-icon icon="lucide:cloud-rain"></iconify-icon>
+                <span class="mono" id="weather-temp">24C / HUM 62%</span>
+              </div>
+              <div class="divider"></div>
+              <div class="weather-item">
+                <iconify-icon icon="lucide:wind"></iconify-icon>
+                <span class="mono" id="weather-wind">12KM/H NW</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="header-right">
+            <div class="clock-wrap">
+              <div class="mono date" id="clock-date">-</div>
+              <div class="mono time" id="clock-time">-</div>
+            </div>
+            <button class="icon-btn" type="button" title="Notifications">
+              <iconify-icon icon="lucide:bell"></iconify-icon>
+            </button>
+            <div class="avatar-ring">
+              <img
+                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Admin"
+                alt="Admin profile"
+                class="avatar"
+              />
+            </div>
+          </div>
+        </header>
+
+        <section class="status-bar card-gradient">
+          <div class="status-item">
+            <p class="status-label">Data Source</p>
+            <p class="status-value" id="status-data-source">-</p>
+          </div>
+          <div class="status-item">
+            <p class="status-label">Tracked Assets</p>
+            <p class="status-value mono" id="status-asset-count">0</p>
+          </div>
+          <div class="status-item">
+            <p class="status-label">Critical Assets</p>
+            <p class="status-value mono danger" id="status-critical-count">0</p>
+          </div>
+          <div class="status-item">
+            <p class="status-label">Last Sync</p>
+            <p class="status-value mono" id="status-sync-time">-</p>
+          </div>
+        </section>
+
+        <section class="sensor-grid" id="bridges-panel">
+          <article class="sensor-card">
+            <div class="sensor-head">
+              <div>
+                <p class="sensor-title">Bridge Strain</p>
+                <h4 class="sensor-value mono" id="strain-value">- <span class="unit">me</span></h4>
+              </div>
+              <div class="sensor-icon cyan"><iconify-icon icon="lucide:activity"></iconify-icon></div>
+            </div>
+            <div class="micro-bars" id="strain-bars"></div>
+            <div class="sensor-foot">
+              <span>Real-time Feed</span>
+              <span id="strain-delta">-</span>
+            </div>
+          </article>
+
+          <article class="sensor-card">
+            <div class="sensor-head">
+              <div>
+                <p class="sensor-title">Vibration Fatigue</p>
+                <h4 class="sensor-value mono" id="vibration-value">- <span class="unit">mm/s</span></h4>
+              </div>
+              <div class="sensor-icon green"><iconify-icon icon="lucide:waveform"></iconify-icon></div>
+            </div>
+            <div class="micro-bars" id="vibration-bars"></div>
+            <div class="sensor-foot">
+              <span>Trend</span>
+              <span id="vibration-delta">-</span>
+            </div>
+          </article>
+
+          <article class="sensor-card">
+            <div class="sensor-head">
+              <div>
+                <p class="sensor-title">Thermal Stress</p>
+                <h4 class="sensor-value mono" id="temperature-value">- <span class="unit">C</span></h4>
+              </div>
+              <div class="sensor-icon orange"><iconify-icon icon="lucide:thermometer"></iconify-icon></div>
+            </div>
+            <div class="micro-bars" id="temperature-bars"></div>
+            <div class="sensor-foot">
+              <span>Heat Alert</span>
+              <span id="temperature-delta">-</span>
+            </div>
+          </article>
+
+          <article class="sensor-card">
+            <div class="sensor-head">
+              <div>
+                <p class="sensor-title">Tilt / Displacement</p>
+                <h4 class="sensor-value mono" id="tilt-value">- <span class="unit">deg</span></h4>
+              </div>
+              <div class="sensor-icon blue"><iconify-icon icon="lucide:move-3d"></iconify-icon></div>
+            </div>
+            <div class="micro-bars" id="tilt-bars"></div>
+            <div class="sensor-foot">
+              <span>Alignment</span>
+              <span id="tilt-delta">-</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="core-grid">
+          <article class="panel gauge-panel card-gradient">
+            <h3>Infrastructure Health</h3>
+            <div class="gauge-wrap">
+              <svg viewBox="0 0 220 220" class="gauge-svg">
+                <defs>
+                  <linearGradient id="healthGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#00d4ff" />
+                    <stop offset="100%" stop-color="#00ff88" />
+                  </linearGradient>
+                </defs>
+                <circle class="gauge-bg" cx="110" cy="110" r="86"></circle>
+                <circle class="gauge-value" id="health-gauge-ring" cx="110" cy="110" r="86"></circle>
+              </svg>
+              <div class="gauge-center">
+                <div class="mono score" id="health-score">0.00</div>
+                <div class="badge" id="health-status-badge">Unknown</div>
+                <div class="mono sub" id="failure-probability">72h Failure: -</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel components-panel card-gradient">
+            <h3>Risk Components</h3>
+            <p class="panel-subtitle">Color = Risk, Width = Contribution</p>
+            <div id="risk-component-bars" class="risk-bars"></div>
+          </article>
+
+          <article class="panel ledger-panel card-gradient" id="ledger-panel">
+            <div class="ledger-head">
+              <iconify-icon icon="lucide:database" class="glow-green"></iconify-icon>
+              <div>
+                <h3>Ledger Verification</h3>
+                <p class="panel-subtitle mono">Tamper-Proof Audit Trail</p>
+              </div>
+            </div>
+
+            <div class="ledger-card">
+              <div class="ledger-row">
+                <span>Verification Status</span>
+                <span class="mono" id="ledger-status">-</span>
+              </div>
+              <div class="ledger-row">
+                <span>Sepolia Link</span>
+                <span class="mono" id="ledger-connection">NOT CONNECTED</span>
+              </div>
+              <div class="ledger-row">
+                <span>Latest Block</span>
+                <span class="mono" id="ledger-latest-block">-</span>
+              </div>
+              <div class="ledger-row">
+                <span>Network</span>
+                <span class="mono" id="ledger-network">-</span>
+              </div>
+              <div class="ledger-row">
+                <span>Tx Hash</span>
+                <span class="mono hash" id="ledger-tx">-</span>
+              </div>
+              <div class="ledger-row">
+                <span>Evidence Hash</span>
+                <span class="mono hash" id="ledger-evidence">-</span>
+              </div>
+              <div class="ledger-row">
+                <span>Wallet Status</span>
+                <span class="mono" id="wallet-connection">NOT CONNECTED</span>
+              </div>
+              <div class="ledger-row">
+                <span>Wallet Address</span>
+                <span class="mono hash" id="wallet-address">-</span>
+              </div>
+              <div class="ledger-row">
+                <span>Wallet Chain</span>
+                <span class="mono" id="wallet-chain">-</span>
+              </div>
+            </div>
+
+            <p id="ledger-connect-message" class="ledger-connect-message">
+              Click connect to verify live Sepolia reachability.
+            </p>
+            <button id="verify-chain-btn" class="verify-btn" type="button">Connect Sepolia</button>
+            <p id="wallet-connect-message" class="ledger-connect-message">
+              Click connect wallet to bind operator identity via MetaMask.
+            </p>
+            <button id="connect-wallet-btn" class="verify-btn wallet-btn" type="button">Connect Wallet</button>
+          </article>
+        </section>
+
+        <section class="lower-grid">
+          <article class="panel trend-panel card-gradient">
+            <h3>72-Hour Failure Forecast</h3>
+            <p class="panel-subtitle">Plain-language trend: higher line = higher failure chance</p>
+            <svg id="forecast-chart" viewBox="0 0 780 240" class="trend-svg" role="img" aria-label="Failure probability trend"></svg>
+            <div class="trend-legend">
+              <span><i class="dot teal"></i>Forecasted probability</span>
+              <span><i class="dot red"></i>Risk threshold (60%)</span>
+            </div>
+          </article>
+
+          <article class="panel map-panel card-gradient" id="alerts-panel">
+            <h3>City Risk Map</h3>
+            <p class="panel-subtitle">Node color = severity, node size = failure probability</p>
+            <div id="risk-map" class="risk-map"></div>
+          </article>
+        </section>
+
+        <section class="panel table-panel card-gradient">
+          <div class="table-head">
+            <h3>Maintenance Log</h3>
+            <p class="panel-subtitle">Most recent autonomous + operator actions</p>
+          </div>
+          <div class="table-wrap custom-scrollbar">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>System Unit</th>
+                  <th>Operator</th>
+                  <th>Status</th>
+                  <th class="align-right">Validation</th>
+                </tr>
+              </thead>
+              <tbody id="maintenance-log-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

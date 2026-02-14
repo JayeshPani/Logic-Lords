@@ -1,11 +1,35 @@
 name: high-risk-detection
+version: v1
 trigger_event: asset.risk.computed
+inputs:
+  - asset.failure.predicted
+
 guard:
-  severity_in:
-    - warning
-    - critical
+  any_of:
+    - field: data.risk_level
+      in:
+        - High
+        - Critical
+    - field: data.health_score
+      gte: 0.70
+    - field: data.failure_probability_72h
+      gte: 0.60
+    - field: data.anomaly_flag
+      equals: 1
+
+retry_policy:
+  max_attempts: 3
+  strategy: fixed_interval
+  interval_seconds: 5
+
 steps:
   - action: compile_recent_sensor_window
   - action: create_inspection_ticket
   - action: notify_field_team
   - action: schedule_follow_up_monitoring
+
+outputs:
+  commands:
+    - inspection.create
+  events:
+    - inspection.requested

@@ -190,6 +190,33 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /blockchain/connect:
+    post:
+      tags: [Verification]
+      operationId: connectBlockchainSepolia
+      summary: Validate live Sepolia connectivity
+      description: Proxies blockchain-verification service Sepolia RPC checks for dashboard action.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: Sepolia connectivity status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlockchainConnectResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -720,3 +747,46 @@ components:
           $ref: '#/components/schemas/MaintenanceVerification'
         meta:
           $ref: '#/components/schemas/ApiMeta'
+
+    BlockchainConnectResponse:
+      type: object
+      required:
+        - connected
+        - network
+        - expected_chain_id
+        - checked_at
+        - message
+        - source
+      properties:
+        connected:
+          type: boolean
+        network:
+          type: string
+          enum: [sepolia]
+        expected_chain_id:
+          type: integer
+          minimum: 1
+          example: 11155111
+        chain_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        latest_block:
+          type: integer
+          minimum: 0
+          nullable: true
+        contract_address:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{40}$'
+          nullable: true
+        contract_deployed:
+          type: boolean
+          nullable: true
+        checked_at:
+          type: string
+          format: date-time
+        message:
+          type: string
+        source:
+          type: string
+          example: services/blockchain-verification-service

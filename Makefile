@@ -1,7 +1,7 @@
 .PHONY: check-structure \
 	data-platform-up data-platform-down data-platform-migrate data-platform-seed data-platform-status \
 	streaming-enqueue streaming-dispatch \
-	module4-check module5-check module6-check module7-check \
+	module4-check module5-check module6-check module7-check module8-check module9-check module10-check module11-check module12-check module13-check module14-check module15-check \
 	ai-step2 ai-step3 ai-step3-test ai-check
 
 check-structure:
@@ -58,3 +58,36 @@ module6-check:
 module7-check:
 	$(PYTHON) -m pytest -q services/anomaly-detection-service/tests/test_anomaly_detection_service.py
 	$(PYTHON) -m pytest -q tests/contract/test_anomaly_detection_contracts.py
+
+module8-check:
+	$(PYTHON) -m pytest -q services/health-score-service/tests/test_health_score_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_health_score_contracts.py
+
+module9-check:
+	$(PYTHON) -m pytest -q apps/orchestration-service/tests/test_orchestration_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_orchestration_contracts.py
+
+module10-check:
+	$(PYTHON) -m pytest -q services/report-generation-service/tests/test_report_generation_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_report_generation_contracts.py
+
+module11-check:
+	$(PYTHON) -m pytest -q apps/notification-service/tests/test_notification_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_notification_contracts.py
+
+module12-check:
+	$(PYTHON) -m pytest -q services/blockchain-verification-service/tests/test_blockchain_verification_service.py
+	$(PYTHON) -m pytest -q tests/contract/test_blockchain_verification_contracts.py
+
+module13-check:
+	$(PYTHON) -m pytest -q apps/api-gateway/tests/test_api_gateway.py
+	$(PYTHON) -m pytest -q tests/contract/test_api_gateway_contracts.py
+
+module14-check:
+	$(PYTHON) -m pytest -q apps/api-gateway/tests/test_dashboard_web.py
+
+module15-check:
+	$(PYTHON) -m pytest -q tests/contract
+	$(PYTHON) -m pytest -q tests/integration
+	$(PYTHON) -m pytest -q tests/e2e
+	$(PYTHON) -m pytest -q tests/performance

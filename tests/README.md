@@ -54,3 +54,84 @@ python3 -m pytest -q tests/contract/test_anomaly_detection_contracts.py
 # Combined service + contract validation:
 make module7-check
 ```
+
+## Module-8 Contract Checks
+
+```bash
+python3 -m pytest -q services/health-score-service/tests/test_health_score_service.py
+python3 -m pytest -q tests/contract/test_health_score_contracts.py
+
+# Combined service + contract validation:
+make module8-check
+```
+
+## Module-9 Contract Checks
+
+```bash
+python3 -m pytest -q apps/orchestration-service/tests/test_orchestration_service.py
+python3 -m pytest -q tests/contract/test_orchestration_contracts.py
+
+# Combined service + contract validation:
+make module9-check
+```
+
+## Module-10 Contract Checks
+
+```bash
+python3 -m pytest -q services/report-generation-service/tests/test_report_generation_service.py
+python3 -m pytest -q tests/contract/test_report_generation_contracts.py
+
+# Combined service + contract validation:
+make module10-check
+```
+
+## Module-11 Contract Checks
+
+```bash
+python3 -m pytest -q apps/notification-service/tests/test_notification_service.py
+python3 -m pytest -q tests/contract/test_notification_contracts.py
+
+# Combined service + contract validation:
+make module11-check
+```
+
+## Module-12 Contract Checks
+
+```bash
+python3 -m pytest -q services/blockchain-verification-service/tests/test_blockchain_verification_service.py
+python3 -m pytest -q tests/contract/test_blockchain_verification_contracts.py
+
+# Combined service + contract validation:
+make module12-check
+```
+
+## Module-13 Contract Checks
+
+```bash
+python3 -m pytest -q apps/api-gateway/tests/test_api_gateway.py
+python3 -m pytest -q tests/contract/test_api_gateway_contracts.py
+
+# Combined service + contract validation:
+make module13-check
+```
+
+## Module-14 Dashboard Checks
+
+```bash
+python3 -m pytest -q apps/api-gateway/tests/test_dashboard_web.py
+
+# Combined dashboard smoke validation:
+make module14-check
+```
+
+## Step-15 Full Matrix
+
+```bash
+python3 -m pytest -q tests/contract
+python3 -m pytest -q tests/integration
+python3 -m pytest -q tests/e2e
+python3 -m pytest -q tests/performance
+
+# Combined matrix validation:
+make module15-check
+```

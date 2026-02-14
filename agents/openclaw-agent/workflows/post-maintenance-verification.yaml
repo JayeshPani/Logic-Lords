@@ -1,7 +1,14 @@
 name: post-maintenance-verification
+version: v1
 trigger_event: maintenance.completed
+
 steps:
   - action: collect_post_repair_metrics
   - action: generate_verification_package
   - action: anchor_hash_on_blockchain
   - action: publish_maintenance_verified
+
+outputs:
+  events:
+    - maintenance.completed
+    - maintenance.verified.blockchain
