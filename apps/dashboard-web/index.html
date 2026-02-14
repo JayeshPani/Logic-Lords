@@ -45,6 +45,10 @@
             <iconify-icon icon="lucide:map-pinned"></iconify-icon>
             <span>City Map</span>
           </button>
+          <button class="nav-item tab-trigger" type="button" data-tab-target="nodes" aria-selected="false">
+            <iconify-icon icon="lucide:radio-tower"></iconify-icon>
+            <span>Nodes</span>
+          </button>
           <button class="nav-item tab-trigger" type="button" data-tab-target="maintenance" aria-selected="false">
             <iconify-icon icon="lucide:clipboard-list"></iconify-icon>
             <span>Maintenance</span>
@@ -140,6 +144,34 @@
                 <p class="status-label">Last Sync</p>
                 <p class="status-value mono" id="status-sync-time">-</p>
               </div>
+            </section>
+
+            <section class="panel card-gradient overview-lstm-panel" aria-label="Realtime LSTM Forecast">
+              <div class="panel-head-row">
+                <div>
+                  <h3>Realtime LSTM Forecast (48h In / 72h Out)</h3>
+                  <p class="panel-subtitle">ESP32-style telemetry simulator with short-latency updates</p>
+                </div>
+              </div>
+              <div class="overview-lstm-kpis">
+                <div class="summary-item">
+                  <span class="summary-label">Asset</span>
+                  <span class="summary-value mono" id="overview-lstm-asset">-</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Current 72h Risk</span>
+                  <span class="summary-value mono" id="overview-lstm-current-risk">-</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Model</span>
+                  <span class="summary-value mono" id="overview-lstm-model">-</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Last Update</span>
+                  <span class="summary-value mono" id="overview-lstm-last-update">-</span>
+                </div>
+              </div>
+              <svg id="overview-lstm-chart" viewBox="0 0 980 260" aria-label="Realtime LSTM signal and forecast"></svg>
             </section>
           </section>
 
@@ -319,6 +351,87 @@
                 <div id="risk-map-legend" class="map-legend" aria-label="Map legend"></div>
               </div>
               <div id="risk-map" class="risk-map" role="img" aria-label="City asset risk map"></div>
+            </article>
+          </section>
+
+          <section class="tab-panel" id="tab-nodes" data-tab-panel="nodes" aria-label="Global Node Registry" hidden>
+            <article class="panel nodes-panel card-gradient">
+              <div class="panel-head-row table-head">
+                <div>
+                  <h3>Global Node Registry</h3>
+                  <p class="panel-subtitle">Connect Firebase Realtime DB and stream live nodes worldwide</p>
+                </div>
+                <span id="firebase-connection-status" class="timeline-value status-watch">DISCONNECTED</span>
+              </div>
+
+              <section class="nodes-connect-grid" aria-label="Firebase connection controls">
+                <label class="nodes-input-group">
+                  <span>Firebase DB URL</span>
+                  <input id="firebase-db-url" type="url" placeholder="https://your-project-default-rtdb.firebaseio.com" />
+                </label>
+                <label class="nodes-input-group">
+                  <span>Base Path</span>
+                  <input id="firebase-base-path" type="text" placeholder="infraguard/telemetry" />
+                </label>
+                <label class="nodes-input-group">
+                  <span>Auth Token (optional)</span>
+                  <input id="firebase-auth-token" type="password" placeholder="Firebase auth token" />
+                </label>
+                <div class="nodes-actions">
+                  <button id="firebase-connect-btn" class="verify-btn wallet-btn" type="button">Connect Firebase</button>
+                  <button id="firebase-disconnect-btn" class="ghost-btn danger-ghost" type="button">Disconnect</button>
+                </div>
+              </section>
+
+              <div class="nodes-kpi-grid">
+                <article class="kpi-card card-gradient">
+                  <p class="kpi-label">Discovered Nodes</p>
+                  <p class="kpi-value mono" id="nodes-total-count">0</p>
+                </article>
+                <article class="kpi-card card-gradient">
+                  <p class="kpi-label">Mapped Assets</p>
+                  <p class="kpi-value mono" id="nodes-mapped-count">0</p>
+                </article>
+                <article class="kpi-card card-gradient">
+                  <p class="kpi-label">Last Firebase Sync</p>
+                  <p class="kpi-value mono" id="nodes-last-sync">-</p>
+                </article>
+              </div>
+
+              <p id="nodes-status-message" class="connection-message status-watch" aria-live="polite">
+                Enter Firebase details and click Connect Firebase to load global node telemetry.
+              </p>
+
+              <div class="nodes-layout">
+                <div class="table-wrap custom-scrollbar">
+                  <table class="nodes-table">
+                    <thead>
+                      <tr>
+                        <th>Node ID</th>
+                        <th>Asset</th>
+                        <th>Zone</th>
+                        <th>Coordinates</th>
+                        <th>Last Seen</th>
+                        <th class="align-right">72h Risk</th>
+                      </tr>
+                    </thead>
+                    <tbody id="nodes-table-body"></tbody>
+                  </table>
+                </div>
+
+                <aside class="node-detail card-gradient" aria-label="Node telemetry detail">
+                  <h4 id="node-detail-title">Node Detail</h4>
+                  <p id="node-detail-subtitle" class="panel-subtitle">Select any node to inspect latest payload.</p>
+                  <div class="node-detail-grid">
+                    <div class="node-detail-row"><span>Asset Link</span><strong id="node-detail-asset-link">-</strong></div>
+                    <div class="node-detail-row"><span>Latest Timestamp</span><strong class="mono" id="node-detail-last-seen">-</strong></div>
+                    <div class="node-detail-row"><span>Temperature</span><strong class="mono" id="node-detail-temperature">-</strong></div>
+                    <div class="node-detail-row"><span>Vibration</span><strong class="mono" id="node-detail-vibration">-</strong></div>
+                    <div class="node-detail-row"><span>Tilt</span><strong class="mono" id="node-detail-tilt">-</strong></div>
+                  </div>
+                  <pre id="node-detail-json" class="node-json">No node selected.</pre>
+                </aside>
+              </div>
             </article>
           </section>
 

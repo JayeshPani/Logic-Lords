@@ -194,6 +194,111 @@ export function renderForecastChart(svg, points) {
     text.textContent = `${step}h`;
     svg.appendChild(text);
   }
+
+  // Hover interaction: show nearest point values at cursor without changing chart data.
+  const hoverGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  hoverGroup.setAttribute("visibility", "hidden");
+
+  const hoverLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  hoverLine.setAttribute("y1", String(padding.top));
+  hoverLine.setAttribute("y2", String(height - padding.bottom));
+  hoverLine.setAttribute("stroke", "rgba(148, 163, 184, 0.55)");
+  hoverLine.setAttribute("stroke-width", "1.5");
+  hoverLine.setAttribute("stroke-dasharray", "4 4");
+
+  const hoverPoint = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  hoverPoint.setAttribute("r", "5");
+  hoverPoint.setAttribute("fill", cssValue("--accent-blue", "#00d4ff"));
+  hoverPoint.setAttribute("stroke", "#0b1222");
+  hoverPoint.setAttribute("stroke-width", "2");
+
+  const tooltipGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const tooltipBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  tooltipBg.setAttribute("rx", "7");
+  tooltipBg.setAttribute("ry", "7");
+  tooltipBg.setAttribute("fill", "rgba(2, 6, 23, 0.92)");
+  tooltipBg.setAttribute("stroke", "rgba(0, 212, 255, 0.45)");
+  tooltipBg.setAttribute("stroke-width", "1");
+
+  const tooltipText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  tooltipText.setAttribute("fill", "#e2e8f0");
+  tooltipText.setAttribute("font-size", "11");
+  tooltipText.setAttribute("font-weight", "700");
+  tooltipText.setAttribute("dominant-baseline", "middle");
+
+  tooltipGroup.appendChild(tooltipBg);
+  tooltipGroup.appendChild(tooltipText);
+  hoverGroup.appendChild(hoverLine);
+  hoverGroup.appendChild(hoverPoint);
+  hoverGroup.appendChild(tooltipGroup);
+  svg.appendChild(hoverGroup);
+
+  const hideHover = () => {
+    hoverGroup.setAttribute("visibility", "hidden");
+  };
+
+  const updateHover = (clientX) => {
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) {
+      hideHover();
+      return;
+    }
+
+    const localX = ((clientX - rect.left) / rect.width) * width;
+    const clampedX = Math.max(padding.left, Math.min(width - padding.right, localX));
+    const hourValue = ((clampedX - padding.left) / chartWidth) * maxX;
+    const clampedHour = Math.max(0, Math.min(maxX, hourValue));
+
+    let leftPoint = sorted[0];
+    let rightPoint = sorted[sorted.length - 1];
+    for (let index = 0; index < sorted.length - 1; index += 1) {
+      const current = sorted[index];
+      const next = sorted[index + 1];
+      if (clampedHour >= current.hour && clampedHour <= next.hour) {
+        leftPoint = current;
+        rightPoint = next;
+        break;
+      }
+    }
+
+    const span = Math.max(1e-6, Number(rightPoint.hour) - Number(leftPoint.hour));
+    const ratio = Math.max(0, Math.min(1, (clampedHour - Number(leftPoint.hour)) / span));
+    const interpolatedProbability =
+      Number(leftPoint.probability) + (Number(rightPoint.probability) - Number(leftPoint.probability)) * ratio;
+
+    const px = clampedX;
+    const py = y(interpolatedProbability);
+
+    hoverLine.setAttribute("x1", String(px));
+    hoverLine.setAttribute("x2", String(px));
+    hoverPoint.setAttribute("cx", String(px));
+    hoverPoint.setAttribute("cy", String(py));
+
+    const label = `${clampedHour.toFixed(1)}h  |  ${(interpolatedProbability * 100).toFixed(1)}%`;
+    tooltipText.textContent = label;
+    const textWidth = Math.max(68, tooltipText.getComputedTextLength() + 12);
+    const textHeight = 24;
+
+    const tooltipX = Math.min(
+      width - padding.right - textWidth,
+      Math.max(padding.left, px + 10),
+    );
+    const tooltipY = Math.max(padding.top, py - 30);
+
+    tooltipBg.setAttribute("x", String(tooltipX));
+    tooltipBg.setAttribute("y", String(tooltipY));
+    tooltipBg.setAttribute("width", String(textWidth));
+    tooltipBg.setAttribute("height", String(textHeight));
+
+    tooltipText.setAttribute("x", String(tooltipX + 6));
+    tooltipText.setAttribute("y", String(tooltipY + textHeight / 2));
+
+    hoverGroup.setAttribute("visibility", "visible");
+  };
+
+  svg.style.cursor = "crosshair";
+  svg.onmousemove = (event) => updateHover(event.clientX);
+  svg.onmouseleave = hideHover;
 }
 
 let leafletLoaderPromise = null;
@@ -580,5 +685,104 @@ export function renderMapLegend(container) {
 
     row.append(dot, label);
     container.appendChild(row);
+  });
+}
+
+export function renderLstmOverviewChart(svg, lstmModel) {
+  if (!svg) {
+    return;
+  }
+  svg.innerHTML = "";
+
+  const width = 980;
+  const height = 260;
+  const padding = { top: 18, right: 24, bottom: 34, left: 44 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+
+  if (!lstmModel?.available) {
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", String(width / 2));
+    text.setAttribute("y", String(height / 2));
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#94a3b8");
+    text.textContent = "LSTM simulator data unavailable";
+    svg.appendChild(text);
+    return;
+  }
+
+  const history = Array.isArray(lstmModel.history) ? lstmModel.history : [];
+  const forecast = Array.isArray(lstmModel.forecastPoints) ? lstmModel.forecastPoints : [];
+
+  const recentHistory = history.slice(-192);
+  const historySeries = recentHistory.map((point, index) => {
+    const stress = 0.45 * point.strain + 0.35 * point.vibration + 0.2 * ((point.temperature - 20) / 20);
+    return { x: -48 + (48 * index) / Math.max(1, recentHistory.length - 1), y: Math.max(0, Math.min(1, stress / 12)) };
+  });
+  const forecastSeries = forecast.map((point) => ({ x: point.hour, y: Math.max(0, Math.min(1, Number(point.probability))) }));
+
+  const x = (value) => padding.left + ((value + 48) / 120) * chartWidth;
+  const y = (value) => padding.top + (1 - value) * chartHeight;
+
+  [0.2, 0.4, 0.6, 0.8, 1].forEach((tick) => {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", String(padding.left));
+    line.setAttribute("x2", String(width - padding.right));
+    line.setAttribute("y1", String(y(tick)));
+    line.setAttribute("y2", String(y(tick)));
+    line.setAttribute("stroke", "rgba(148,163,184,0.2)");
+    line.setAttribute("stroke-width", "1");
+    svg.appendChild(line);
+  });
+
+  const divider = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  divider.setAttribute("x1", String(x(0)));
+  divider.setAttribute("x2", String(x(0)));
+  divider.setAttribute("y1", String(padding.top));
+  divider.setAttribute("y2", String(height - padding.bottom));
+  divider.setAttribute("stroke", "rgba(250,204,21,0.55)");
+  divider.setAttribute("stroke-width", "1.5");
+  divider.setAttribute("stroke-dasharray", "5 4");
+  svg.appendChild(divider);
+
+  const drawPath = (series, color, widthPx, dashArray = null) => {
+    if (!series.length) {
+      return;
+    }
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const d = series
+      .map((point, idx) => `${idx === 0 ? "M" : "L"}${x(point.x)} ${y(point.y)}`)
+      .join(" ");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", String(widthPx));
+    path.setAttribute("stroke-linecap", "round");
+    if (dashArray) {
+      path.setAttribute("stroke-dasharray", dashArray);
+    }
+    svg.appendChild(path);
+  };
+
+  drawPath(historySeries, "rgba(34,211,238,0.95)", 2.6);
+  drawPath(forecastSeries, "rgba(244,63,94,0.9)", 2.8, "7 5");
+
+  const labels = [
+    { value: -48, text: "-48h" },
+    { value: -24, text: "-24h" },
+    { value: 0, text: "Now" },
+    { value: 24, text: "+24h" },
+    { value: 48, text: "+48h" },
+    { value: 72, text: "+72h" },
+  ];
+  labels.forEach((label) => {
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", String(x(label.value)));
+    text.setAttribute("y", String(height - 8));
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#94a3b8");
+    text.setAttribute("font-size", "11");
+    text.textContent = label.text;
+    svg.appendChild(text);
   });
 }

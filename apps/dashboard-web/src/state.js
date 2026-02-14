@@ -141,6 +141,56 @@ function buildOverviewModel(assetRows, blockchainConnection, stale, error, sourc
   };
 }
 
+function buildLstmOverviewModel(raw) {
+  const data = raw.lstmRealtime;
+  if (!data || typeof data !== "object") {
+    return {
+      available: false,
+      assetId: null,
+      generatedAt: raw.generatedAt || new Date().toISOString(),
+      currentProbability72h: 0,
+      history: [],
+      forecastPoints: [],
+      model: null,
+    };
+  }
+
+  const history = Array.isArray(data.history)
+    ? data.history
+      .map((item) => ({
+        timestamp: item.timestamp || new Date().toISOString(),
+        strain: Number(item.strain_value ?? 0),
+        vibration: Number(item.vibration_rms ?? 0),
+        temperature: Number(item.temperature ?? 0),
+        humidity: Number(item.humidity ?? 0),
+      }))
+      .filter((item) => Number.isFinite(item.strain) && Number.isFinite(item.vibration))
+    : [];
+
+  const forecastPoints = Array.isArray(data.forecast_points)
+    ? data.forecast_points
+      .map((point) => ({
+        hour: Number(point.hour ?? 0),
+        probability: clamp01(point.probability),
+      }))
+      .filter((point) => Number.isFinite(point.hour))
+      .sort((left, right) => left.hour - right.hour)
+    : [];
+
+  return {
+    available: true,
+    assetId: data.asset_id || null,
+    generatedAt: data.generated_at || raw.generatedAt || new Date().toISOString(),
+    currentProbability72h: clamp01(data.current_failure_probability_72h),
+    historyWindowHours: Number(data.history_window_hours || 48),
+    forecastHorizonHours: Number(data.forecast_horizon_hours || 72),
+    history,
+    forecastPoints,
+    model: data.model || null,
+    source: data.source || "simulator",
+  };
+}
+
 function pickSelectedAssetId(assetRows, requestedAssetId) {
   if (!assetRows.length) {
     return null;
@@ -207,6 +257,73 @@ function buildAssetDetailModel(raw, selectedAsset, allAssets) {
   };
 }
 
+function buildNodesModel(raw, allAssets) {
+  const firebaseState = raw.firebaseNodes || null;
+  const firebaseNodes = Array.isArray(firebaseState?.nodes) ? firebaseState.nodes : [];
+
+  const nodes = firebaseNodes.length
+    ? firebaseNodes.map((node) => {
+      const matchedAsset = allAssets.find((asset) => asset.assetId === node.assetId) || null;
+      return {
+        nodeId: node.nodeId,
+        assetId: node.assetId,
+        assetName: matchedAsset?.name || node.assetName || node.assetId,
+        zone: matchedAsset?.zone || node.zone || "global",
+        severity: matchedAsset?.severity || "watch",
+        severityLabel: matchedAsset?.severityLabel || "Watch",
+        failureProbability72h:
+            typeof node.failureProbability72h === "number"
+              ? clamp01(node.failureProbability72h)
+              : clamp01(matchedAsset?.failureProbability72h),
+        coordinates: node.location || null,
+        lastSeen: node.latestAt || raw.generatedAt || new Date().toISOString(),
+        telemetryCount: Object.values(node.telemetry || {}).filter(
+          (entry) => entry && Number.isFinite(Number(entry.value)),
+        ).length,
+        telemetry: node.telemetry || {},
+        rawLatest: node.rawLatest || {},
+        mappedToAsset: Boolean(matchedAsset),
+      };
+    })
+    : allAssets.map((asset) => {
+      const telemetry = raw.sensorsByAsset?.[asset.assetId] ?? {};
+      const telemetryCount = Object.values(telemetry).filter(
+        (entry) => entry && Number.isFinite(Number(entry.value)),
+      ).length;
+      const lat = Number(asset.location?.lat ?? NaN);
+      const lon = Number(asset.location?.lon ?? NaN);
+
+      return {
+        nodeId: asset.assetId,
+        assetId: asset.assetId,
+        assetName: asset.name,
+        zone: asset.zone,
+        severity: asset.severity,
+        severityLabel: asset.severityLabel,
+        failureProbability72h: asset.failureProbability72h,
+        coordinates: Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null,
+        lastSeen: asset.evaluatedAt || raw.generatedAt || new Date().toISOString(),
+        telemetryCount,
+        telemetry,
+        rawLatest: {},
+        mappedToAsset: true,
+      };
+    });
+
+  const mappedNodes = nodes.filter((node) => node.mappedToAsset).length;
+  return {
+    source: String(firebaseState?.connected ? "firebase" : raw.source || "unknown"),
+    connected: Boolean(firebaseState?.connected),
+    message: firebaseState?.message || "Using platform nodes from API gateway.",
+    dbUrl: firebaseState?.dbUrl || "",
+    basePath: firebaseState?.basePath || "",
+    lastFetchedAt: firebaseState?.lastFetchedAt || null,
+    totalNodes: nodes.length,
+    mappedNodes,
+    nodes,
+  };
+}
+
 export function createViewModel(raw, { selectedAssetId = null } = {}) {
   const blockchainConnection = raw.blockchainConnection ?? {
     connected: false,
@@ -237,15 +354,19 @@ export function createViewModel(raw, { selectedAssetId = null } = {}) {
   );
 
   const assetDetailModel = buildAssetDetailModel(raw, selectedAsset, assetRows);
+  const nodesModel = buildNodesModel(raw, assetRows);
+  const lstmOverviewModel = buildLstmOverviewModel(raw);
 
   return {
     source: raw.source || "unknown",
     generatedAt: raw.generatedAt || new Date().toISOString(),
     overviewModel,
     assetDetailModel,
+    lstmOverviewModel,
     verification: raw.verification || null,
     blockchainConnection,
     walletConnection,
+    nodesModel,
     isConnected: Boolean(blockchainConnection.connected),
     isWalletReady: Boolean(walletConnection.connected),
     selectedAssetId: nextSelectedId,

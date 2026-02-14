@@ -28,6 +28,8 @@ from .schemas import (
     CreateAssetRequest,
     DependencyHealth,
     HealthCheckResponse,
+    LstmRealtimeIngestRequest,
+    LstmRealtimeResponse,
     MaintenanceVerificationResponse,
     Pagination,
 )
@@ -428,3 +430,42 @@ def get_latest_telemetry(
         captured_at=telemetry.captured_at.isoformat(),
     )
     return AssetTelemetryResponse(data=telemetry, meta=build_meta())
+
+
+@router.post("/lstm/realtime/ingest", status_code=202)
+def ingest_lstm_realtime(
+    request: Request,
+    payload: LstmRealtimeIngestRequest,
+    auth: Annotated[AuthContext, Depends(get_auth_context)],
+) -> dict[str, str]:
+    trace_id = _trace_id(request)
+    enforce_rate_limit(request, auth)
+    _with_metrics("/lstm/realtime/ingest")
+    _store.set_lstm_realtime(payload.data)
+    log_event(
+        logger,
+        "gateway_lstm_realtime_ingested",
+        trace_id=trace_id,
+        asset_id=payload.data.asset_id,
+        history_points=len(payload.data.history),
+        forecast_points=len(payload.data.forecast_points),
+    )
+    return {"status": "accepted"}
+
+
+@router.get("/lstm/realtime", response_model=LstmRealtimeResponse)
+def get_lstm_realtime(
+    request: Request,
+    auth: Annotated[AuthContext, Depends(get_auth_context)],
+) -> LstmRealtimeResponse:
+    trace_id = _trace_id(request)
+    enforce_rate_limit(request, auth)
+    _with_metrics("/lstm/realtime")
+    data = _store.get_lstm_realtime()
+    log_event(
+        logger,
+        "gateway_lstm_realtime_read",
+        trace_id=trace_id,
+        asset_id=data.asset_id,
+    )
+    return LstmRealtimeResponse(data=data, meta=build_meta())

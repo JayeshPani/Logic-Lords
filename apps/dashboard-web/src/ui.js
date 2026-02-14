@@ -2,6 +2,7 @@ import { DASHBOARD_CONFIG, RISK_COLOR_BY_LEVEL, SEVERITY_COLOR, UI_ERROR_HINTS }
 import {
   renderForecastChart,
   renderHealthGauge,
+  renderLstmOverviewChart,
   renderMapLegend,
   renderMicroBars,
   renderRiskBars,
@@ -122,6 +123,116 @@ function renderMaintenanceRows(rows) {
   });
 }
 
+function formatCoordinates(coordinates) {
+  if (!coordinates) {
+    return "-";
+  }
+  return `${coordinates.lat.toFixed(4)}, ${coordinates.lon.toFixed(4)}`;
+}
+
+function renderNodeDetail(selectedNode) {
+  setText("node-detail-title", selectedNode ? `${selectedNode.nodeId}` : "Node Detail");
+  setText(
+    "node-detail-subtitle",
+    selectedNode
+      ? `${selectedNode.zone.toUpperCase()} • ${selectedNode.assetName}`
+      : "Select any node to inspect latest payload.",
+  );
+  setText("node-detail-asset-link", selectedNode?.assetId || "-");
+  setText("node-detail-last-seen", selectedNode ? formatIso(selectedNode.lastSeen) : "-");
+  setText(
+    "node-detail-temperature",
+    selectedNode?.telemetry?.temperature ? `${selectedNode.telemetry.temperature.value} ${selectedNode.telemetry.temperature.unit}` : "-",
+  );
+  setText(
+    "node-detail-vibration",
+    selectedNode?.telemetry?.vibration ? `${selectedNode.telemetry.vibration.value} ${selectedNode.telemetry.vibration.unit}` : "-",
+  );
+  setText(
+    "node-detail-tilt",
+    selectedNode?.telemetry?.tilt ? `${selectedNode.telemetry.tilt.value} ${selectedNode.telemetry.tilt.unit}` : "-",
+  );
+
+  const rawJson = byId("node-detail-json");
+  if (rawJson) {
+    rawJson.textContent = selectedNode
+      ? JSON.stringify(selectedNode.rawLatest || {}, null, 2)
+      : "No node selected.";
+  }
+
+}
+
+function renderNodesPanel(nodesModel, selectedAssetId, selectedNodeId, onSelectNode) {
+  const body = byId("nodes-table-body");
+  if (!body) {
+    return;
+  }
+  body.innerHTML = "";
+
+  setText("nodes-total-count", String(nodesModel?.totalNodes ?? 0));
+  setText("nodes-mapped-count", String(nodesModel?.mappedNodes ?? 0));
+  setText("nodes-last-sync", nodesModel?.lastFetchedAt ? formatIso(nodesModel.lastFetchedAt) : "-");
+  setText("nodes-status-message", nodesModel?.message || "No node data available.");
+  const nodesStatus = byId("nodes-status-message");
+  if (nodesStatus) {
+    nodesStatus.className = `connection-message ${nodesModel?.connected ? "status-ok" : "status-watch"}`;
+  }
+
+  const connectionStatus = byId("firebase-connection-status");
+  if (connectionStatus) {
+    const connected = Boolean(nodesModel?.connected);
+    connectionStatus.textContent = connected ? "CONNECTED" : "DISCONNECTED";
+    connectionStatus.className = `timeline-value ${connected ? "status-ok" : "status-watch"}`;
+  }
+
+  const nodes = nodesModel?.nodes || [];
+  if (!nodes.length) {
+    const empty = document.createElement("tr");
+    empty.innerHTML = "<td colspan='6'>No nodes available from ingestion runtime.</td>";
+    body.appendChild(empty);
+    renderNodeDetail(null);
+    return;
+  }
+
+  let effectiveSelectedNode = nodes.find((node) => node.nodeId === selectedNodeId) || null;
+  if (!effectiveSelectedNode) {
+    effectiveSelectedNode = nodes.find((node) => node.assetId === selectedAssetId) || nodes[0] || null;
+  }
+
+  nodes.forEach((node) => {
+    const row = document.createElement("tr");
+    row.className = `nodes-row ${node.nodeId === effectiveSelectedNode?.nodeId ? "nodes-row-selected" : ""}`;
+    row.setAttribute("role", "button");
+    row.tabIndex = 0;
+    row.innerHTML = `
+      <td class="mono">${node.nodeId}</td>
+      <td class="strong">${node.assetName}</td>
+      <td class="mono">${node.zone.toUpperCase()}</td>
+      <td class="mono">${formatCoordinates(node.coordinates)}</td>
+      <td class="mono">${formatIso(node.lastSeen)}</td>
+      <td class="align-right mono">${node.mappedToAsset ? toPercent(node.failureProbability72h, 0) : "UNMAPPED"}</td>
+    `;
+
+    const selectNode = () => {
+      if (typeof onSelectNode === "function") {
+        onSelectNode(node.nodeId);
+      }
+    };
+
+    row.addEventListener("click", selectNode);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectNode();
+      }
+    });
+
+    body.appendChild(row);
+  });
+
+  renderNodeDetail(effectiveSelectedNode);
+}
+
 export function renderOverviewKpis(overviewModel) {
   setText("kpi-overall-health-value", overviewModel ? toPercent(overviewModel.overallHealth, 0) : "-");
   setText("kpi-critical-assets-value", overviewModel ? String(overviewModel.criticalAssets) : "-");
@@ -143,6 +254,25 @@ export function renderOverviewKpis(overviewModel) {
       staleBadge.className = "stale-badge";
     }
   }
+}
+
+function renderOverviewLstmPanel(lstmOverviewModel) {
+  setText("overview-lstm-asset", lstmOverviewModel?.assetId || "-");
+  setText(
+    "overview-lstm-current-risk",
+    lstmOverviewModel?.available ? toPercent(lstmOverviewModel.currentProbability72h, 1) : "-",
+  );
+  setText(
+    "overview-lstm-model",
+    lstmOverviewModel?.model
+      ? `${String(lstmOverviewModel.model.name || "lstm")}/${String(lstmOverviewModel.model.mode || "mode")}`
+      : "-",
+  );
+  setText(
+    "overview-lstm-last-update",
+    lstmOverviewModel?.available ? formatIso(lstmOverviewModel.generatedAt) : "-",
+  );
+  renderLstmOverviewChart(byId("overview-lstm-chart"), lstmOverviewModel);
 }
 
 export function renderTriageList(overviewModel, selectedAssetId, onSelectAsset) {
@@ -267,6 +397,8 @@ export function renderLedgerWalletPanel(blockchainConnection, walletConnection, 
 
 export function renderDashboard(viewModel, options = {}) {
   const onSelectAsset = options.onSelectAsset;
+  const onSelectNode = options.onSelectNode;
+  const selectedNodeId = options.selectedNodeId || null;
   const activeTab = options.activeTab || "overview";
   setText("command-center-value", DASHBOARD_CONFIG.commandCenter);
   setText(
@@ -278,6 +410,7 @@ export function renderDashboard(viewModel, options = {}) {
     `${DASHBOARD_CONFIG.weather.windKmh}KM/H ${DASHBOARD_CONFIG.weather.windDirection}`,
   );
   renderOverviewKpis(viewModel.overviewModel);
+  renderOverviewLstmPanel(viewModel.lstmOverviewModel);
   renderTriageList(viewModel.overviewModel, viewModel.selectedAssetId, onSelectAsset);
   renderSelectedAssetHeader(viewModel.assetDetailModel);
   renderSelectedAssetPanels(viewModel.assetDetailModel);
@@ -289,6 +422,7 @@ export function renderDashboard(viewModel, options = {}) {
     statusElement: byId("risk-map-status"),
   });
   renderMapLegend(byId("risk-map-legend"));
+  renderNodesPanel(viewModel.nodesModel, viewModel.selectedAssetId, selectedNodeId, onSelectNode);
   renderMaintenanceRows(viewModel.assetDetailModel?.maintenanceLog || []);
 }
 
