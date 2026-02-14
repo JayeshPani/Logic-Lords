@@ -19,6 +19,8 @@ from .errors import ApiError, build_meta
 from .observability import get_metrics, log_event
 from .schemas import (
     AssetListResponse,
+    AssetTelemetry,
+    AssetTelemetryResponse,
     AssetResponse,
     AssetForecastResponse,
     AssetHealthResponse,
@@ -50,49 +52,143 @@ def _with_metrics(path: str) -> None:
 
 
 def _connect_blockchain_service(trace_id: str) -> dict:
-    endpoint = f"{_settings.blockchain_verification_base_url.rstrip('/')}/onchain/connect"
+    timeout_seconds = max(_settings.blockchain_connect_timeout_seconds, 0.1)
+    attempts: list[str] = []
+    timed_out = False
+
+    for base_url in _settings.blockchain_verification_urls:
+        endpoint = f"{base_url.rstrip('/')}/onchain/connect"
+        request = url_request.Request(
+            url=endpoint,
+            data=b"{}",
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "x-trace-id": trace_id,
+            },
+        )
+        try:
+            with url_request.urlopen(request, timeout=timeout_seconds) as response:
+                payload = response.read().decode("utf-8")
+        except url_error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="ignore")
+            if exc.code in {404, 405}:
+                attempts.append(f"{base_url} -> HTTP {exc.code}")
+                continue
+            raise ApiError(
+                status_code=502,
+                code="BLOCKCHAIN_SERVICE_ERROR",
+                message=f"Blockchain service HTTP {exc.code}: {details[:180]}",
+                trace_id=trace_id,
+            ) from exc
+        except url_error.URLError as exc:
+            attempts.append(f"{base_url} -> {exc.reason}")
+            continue
+        except (TimeoutError, socket.timeout):
+            timed_out = True
+            attempts.append(f"{base_url} -> timeout")
+            continue
+        except OSError as exc:
+            attempts.append(f"{base_url} -> {exc}")
+            continue
+
+        try:
+            body = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise ApiError(
+                status_code=502,
+                code="BLOCKCHAIN_BAD_RESPONSE",
+                message="Blockchain service returned invalid JSON.",
+                trace_id=trace_id,
+            ) from exc
+
+        if not isinstance(body, dict):
+            raise ApiError(
+                status_code=502,
+                code="BLOCKCHAIN_BAD_RESPONSE",
+                message="Blockchain service returned an unsupported payload shape.",
+                trace_id=trace_id,
+            )
+        return body
+
+    summary = "; ".join(attempts[:3]) or "no endpoint attempts recorded"
+    if timed_out and not attempts:
+        raise ApiError(
+            status_code=504,
+            code="BLOCKCHAIN_TIMEOUT",
+            message=f"Blockchain service timed out after {timeout_seconds:.1f}s.",
+            trace_id=trace_id,
+        )
+
+    if timed_out and attempts and all(attempt.endswith("timeout") for attempt in attempts):
+        raise ApiError(
+            status_code=504,
+            code="BLOCKCHAIN_TIMEOUT",
+            message=f"Blockchain service timed out after {timeout_seconds:.1f}s.",
+            trace_id=trace_id,
+        )
+
+    raise ApiError(
+        status_code=503,
+        code="BLOCKCHAIN_UNAVAILABLE",
+        message=f"Blockchain service unreachable. Tried: {summary}",
+        trace_id=trace_id,
+    )
+
+
+def _fetch_sensor_telemetry(asset_id: str, trace_id: str) -> dict:
+    endpoint = (
+        f"{_settings.sensor_ingestion_base_url.rstrip('/')}"
+        f"/telemetry/assets/{asset_id}/latest"
+    )
     request = url_request.Request(
         url=endpoint,
-        data=b"{}",
-        method="POST",
+        method="GET",
         headers={
-            "content-type": "application/json",
+            "accept": "application/json",
             "x-trace-id": trace_id,
         },
     )
 
-    timeout_seconds = max(_settings.blockchain_connect_timeout_seconds, 0.1)
+    timeout_seconds = max(_settings.sensor_telemetry_timeout_seconds, 0.1)
 
     try:
         with url_request.urlopen(request, timeout=timeout_seconds) as response:
             payload = response.read().decode("utf-8")
     except url_error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="ignore")
+        if exc.code == 404:
+            raise ApiError(
+                status_code=404,
+                code="NOT_FOUND",
+                message=f"Telemetry unavailable for asset: {asset_id}",
+                trace_id=trace_id,
+            ) from exc
         raise ApiError(
             status_code=502,
-            code="BLOCKCHAIN_SERVICE_ERROR",
-            message=f"Blockchain service HTTP {exc.code}: {details[:180]}",
+            code="SENSOR_INGESTION_ERROR",
+            message=f"Sensor ingestion HTTP {exc.code}: {details[:180]}",
             trace_id=trace_id,
         ) from exc
     except url_error.URLError as exc:
         raise ApiError(
             status_code=503,
-            code="BLOCKCHAIN_UNAVAILABLE",
-            message=f"Blockchain service unreachable: {exc.reason}",
+            code="SENSOR_INGESTION_UNAVAILABLE",
+            message=f"Sensor ingestion service unreachable: {exc.reason}",
             trace_id=trace_id,
         ) from exc
     except (TimeoutError, socket.timeout) as exc:
         raise ApiError(
             status_code=504,
-            code="BLOCKCHAIN_TIMEOUT",
-            message=f"Blockchain service timed out after {timeout_seconds:.1f}s.",
+            code="SENSOR_INGESTION_TIMEOUT",
+            message=f"Sensor ingestion service timed out after {timeout_seconds:.1f}s.",
             trace_id=trace_id,
         ) from exc
     except OSError as exc:
         raise ApiError(
             status_code=503,
-            code="BLOCKCHAIN_UNAVAILABLE",
-            message=f"Blockchain service network error: {exc}",
+            code="SENSOR_INGESTION_UNAVAILABLE",
+            message=f"Sensor ingestion network error: {exc}",
             trace_id=trace_id,
         ) from exc
 
@@ -101,16 +197,16 @@ def _connect_blockchain_service(trace_id: str) -> dict:
     except json.JSONDecodeError as exc:
         raise ApiError(
             status_code=502,
-            code="BLOCKCHAIN_BAD_RESPONSE",
-            message="Blockchain service returned invalid JSON.",
+            code="SENSOR_INGESTION_BAD_RESPONSE",
+            message="Sensor ingestion service returned invalid JSON.",
             trace_id=trace_id,
         ) from exc
 
     if not isinstance(body, dict):
         raise ApiError(
             status_code=502,
-            code="BLOCKCHAIN_BAD_RESPONSE",
-            message="Blockchain service returned an unsupported payload shape.",
+            code="SENSOR_INGESTION_BAD_RESPONSE",
+            message="Sensor ingestion service returned an unsupported payload shape.",
             trace_id=trace_id,
         )
     return body
@@ -299,3 +395,36 @@ def connect_blockchain(
     )
 
     return status
+
+
+@router.get("/telemetry/{asset_id}/latest", response_model=AssetTelemetryResponse)
+def get_latest_telemetry(
+    asset_id: str,
+    request: Request,
+    auth: Annotated[AuthContext, Depends(get_auth_context)],
+) -> AssetTelemetryResponse:
+    trace_id = _trace_id(request)
+    enforce_rate_limit(request, auth)
+    _with_metrics("/telemetry/{asset_id}/latest")
+
+    payload = _fetch_sensor_telemetry(asset_id, trace_id)
+
+    try:
+        telemetry = AssetTelemetry.model_validate(payload)
+    except ValidationError as exc:
+        raise ApiError(
+            status_code=502,
+            code="SENSOR_INGESTION_BAD_RESPONSE",
+            message=f"Sensor telemetry response validation failed: {exc.errors()}",
+            trace_id=trace_id,
+        ) from exc
+
+    log_event(
+        logger,
+        "gateway_asset_telemetry",
+        trace_id=trace_id,
+        asset_id=telemetry.asset_id,
+        source=telemetry.source,
+        captured_at=telemetry.captured_at.isoformat(),
+    )
+    return AssetTelemetryResponse(data=telemetry, meta=build_meta())

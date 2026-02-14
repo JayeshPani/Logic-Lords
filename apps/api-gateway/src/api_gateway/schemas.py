@@ -209,3 +209,41 @@ class BlockchainConnectResponse(BaseModel):
     checked_at: datetime
     message: str
     source: str = "services/blockchain-verification-service"
+
+
+class SensorCardMetric(BaseModel):
+    """Sensor card metric consumed by dashboard UI."""
+
+    value: float
+    unit: str
+    delta: str
+    samples: list[float] = Field(default_factory=list)
+
+
+class TelemetryComputed(BaseModel):
+    """Computed telemetry indexes from sensor stream."""
+
+    acceleration_magnitude_g: float
+    vibration_rms_ms2: float
+    tilt_deg: float
+    strain_proxy_microstrain: float
+    thermal_stress_index: float = Field(ge=0, le=1)
+    fatigue_index: float = Field(ge=0, le=1)
+    health_proxy_score: float = Field(ge=0, le=1)
+
+
+class AssetTelemetry(BaseModel):
+    """Latest telemetry snapshot for one asset."""
+
+    asset_id: str
+    source: str
+    captured_at: datetime
+    sensors: dict[str, SensorCardMetric]
+    computed: TelemetryComputed
+
+
+class AssetTelemetryResponse(BaseModel):
+    """Telemetry response wrapper."""
+
+    data: AssetTelemetry
+    meta: ApiMeta

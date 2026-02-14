@@ -11,6 +11,7 @@ security:
 tags:
   - name: System
   - name: Assets
+  - name: Telemetry
   - name: Risk
   - name: Forecast
   - name: Verification
@@ -154,6 +155,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AssetForecastResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /telemetry/{asset_id}/latest:
+    get:
+      tags: [Telemetry]
+      operationId: getAssetLatestTelemetry
+      summary: Latest live telemetry for an asset
+      description: Returns latest DHT11 + accelerometer-derived metrics from sensor-ingestion service.
+      parameters:
+        - $ref: '#/components/parameters/AssetIdParam'
+      responses:
+        '200':
+          description: Latest telemetry snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetTelemetryResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -790,3 +817,78 @@ components:
         source:
           type: string
           example: services/blockchain-verification-service
+
+    SensorCardMetric:
+      type: object
+      required: [value, unit, delta, samples]
+      properties:
+        value:
+          type: number
+        unit:
+          type: string
+        delta:
+          type: string
+        samples:
+          type: array
+          items:
+            type: number
+
+    TelemetryComputed:
+      type: object
+      required:
+        - acceleration_magnitude_g
+        - vibration_rms_ms2
+        - tilt_deg
+        - strain_proxy_microstrain
+        - thermal_stress_index
+        - fatigue_index
+        - health_proxy_score
+      properties:
+        acceleration_magnitude_g:
+          type: number
+        vibration_rms_ms2:
+          type: number
+        tilt_deg:
+          type: number
+        strain_proxy_microstrain:
+          type: number
+        thermal_stress_index:
+          type: number
+          minimum: 0
+          maximum: 1
+        fatigue_index:
+          type: number
+          minimum: 0
+          maximum: 1
+        health_proxy_score:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    AssetTelemetry:
+      type: object
+      required: [asset_id, source, captured_at, sensors, computed]
+      properties:
+        asset_id:
+          type: string
+        source:
+          type: string
+          example: firebase
+        captured_at:
+          type: string
+          format: date-time
+        sensors:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/SensorCardMetric'
+        computed:
+          $ref: '#/components/schemas/TelemetryComputed'
+
+    AssetTelemetryResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AssetTelemetry'
+        meta:
+          $ref: '#/components/schemas/ApiMeta'

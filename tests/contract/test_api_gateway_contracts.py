@@ -68,6 +68,7 @@ def test_gateway_openapi_paths_and_responses() -> None:
         "/assets/{asset_id}": "get",
         "/assets/{asset_id}/health": "get",
         "/assets/{asset_id}/forecast": "get",
+        "/telemetry/{asset_id}/latest": "get",
         "/maintenance/{maintenance_id}/verification": "get",
         "/blockchain/connect": "post",
     }
@@ -97,6 +98,31 @@ def test_gateway_openapi_paths_and_responses() -> None:
     forecast = client.get("/assets/asset_w12_bridge_0042/forecast", headers=AUTH_HEADERS)
     assert forecast.status_code == 200
     _validate(spec, "AssetForecastResponse", forecast.json())
+
+    gateway_routes._fetch_sensor_telemetry = lambda _asset_id, _trace_id: {
+        "asset_id": "asset_w12_bridge_0042",
+        "source": "firebase",
+        "captured_at": "2026-02-14T07:05:00+00:00",
+        "sensors": {
+            "strain": {"value": 12.9, "unit": "me", "delta": "+0.2 variance", "samples": [12.0, 12.4, 12.7, 12.9]},
+            "vibration": {"value": 1.3, "unit": "mm/s", "delta": "+0.1 trend", "samples": [1.0, 1.1, 1.2, 1.3]},
+            "temperature": {"value": 28.5, "unit": "C", "delta": "+0.4 spike", "samples": [27.8, 28.0, 28.2, 28.5]},
+            "tilt": {"value": 3.1, "unit": "deg", "delta": "+0.2 drift", "samples": [2.6, 2.8, 2.9, 3.1]},
+        },
+        "computed": {
+            "acceleration_magnitude_g": 1.01,
+            "vibration_rms_ms2": 1.3,
+            "tilt_deg": 3.1,
+            "strain_proxy_microstrain": 12.9,
+            "thermal_stress_index": 0.31,
+            "fatigue_index": 0.20,
+            "health_proxy_score": 0.79,
+        },
+    }
+
+    telemetry = client.get("/telemetry/asset_w12_bridge_0042/latest", headers=AUTH_HEADERS)
+    assert telemetry.status_code == 200
+    _validate(spec, "AssetTelemetryResponse", telemetry.json())
 
     verification = client.get("/maintenance/mnt_20260214_0012/verification", headers=AUTH_HEADERS)
     assert verification.status_code == 200

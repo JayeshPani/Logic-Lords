@@ -2,54 +2,81 @@ import { DASHBOARD_CONFIG } from "./config.js";
 import { MOCK_DATA } from "./mock-data.js";
 import { emptyWalletStatus } from "./wallet.js";
 
-function normalizeForecastPoints(forecast) {
-  if (!forecast) {
-    return [];
+class DashboardApiError extends Error {
+  constructor({ code, message, endpoint, status = null, details = null }) {
+    super(message);
+    this.name = "DashboardApiError";
+    this.code = code;
+    this.endpoint = endpoint;
+    this.status = status;
+    this.details = details;
   }
-  if (Array.isArray(forecast.points) && forecast.points.length > 0) {
-    return forecast.points;
+}
+
+function normalizeProbability(value) {
+  return Math.max(0, Math.min(1, Number(value ?? 0)));
+}
+
+function normalizeForecastPoints(forecast) {
+  if (forecast && Array.isArray(forecast.points) && forecast.points.length > 0) {
+    return forecast.points
+      .map((point) => ({ hour: Number(point.hour), probability: normalizeProbability(point.probability) }))
+      .filter((point) => Number.isFinite(point.hour))
+      .sort((left, right) => left.hour - right.hour);
   }
 
-  const baseProbability = Number(forecast.failure_probability_72h ?? 0.45);
+  const baseProbability = normalizeProbability(forecast?.failure_probability_72h ?? 0.4);
   const points = [];
   for (let hour = 0; hour <= 72; hour += 8) {
-    const wobble = Math.sin(hour / 14) * 0.08;
-    const drift = hour / 72 * 0.15;
-    const probability = Math.max(0, Math.min(1, baseProbability - 0.1 + wobble + drift));
-    points.push({ hour, probability });
+    const wave = Math.sin(hour / 12) * 0.07;
+    const drift = (hour / 72) * 0.16;
+    points.push({
+      hour,
+      probability: normalizeProbability(baseProbability - 0.08 + wave + drift),
+    });
   }
   return points;
 }
 
+function buildSyntheticForecast(assetId, health) {
+  const probability = normalizeProbability(health?.failure_probability_72h ?? 0.35);
+  return {
+    asset_id: assetId,
+    horizon_hours: 72,
+    confidence: 0.74,
+    points: normalizeForecastPoints({ failure_probability_72h: probability }),
+  };
+}
+
 function buildSensorTelemetry(health) {
   const components = health?.components ?? {};
-  const base = {
+  const bases = {
     strain: Number(components.mechanical_stress ?? 0.4),
     vibration: Number(components.fatigue ?? 0.35),
     temperature: Number(components.thermal_stress ?? 0.3),
-    tilt: Number(components.environmental_exposure ?? 0.28),
+    tilt: Number(components.environmental_exposure ?? 0.25),
   };
 
-  const sensorScale = {
-    strain: { factor: 18, precision: 1, unit: "me", label: "variance" },
-    vibration: { factor: 9, precision: 1, unit: "mm/s", label: "trend" },
-    temperature: { factor: 42, precision: 1, unit: "C", label: "spike" },
-    tilt: { factor: 0.8, precision: 2, unit: "deg", label: "shift" },
+  const definitions = {
+    strain: { factor: 18, unit: "me", label: "variance", precision: 1 },
+    vibration: { factor: 9, unit: "mm/s", label: "trend", precision: 1 },
+    temperature: { factor: 42, unit: "C", label: "spike", precision: 1 },
+    tilt: { factor: 0.8, unit: "deg", label: "drift", precision: 2 },
   };
 
   const telemetry = {};
-  Object.entries(sensorScale).forEach(([key, spec]) => {
-    const value = base[key] * spec.factor;
+  Object.entries(definitions).forEach(([key, spec]) => {
+    const value = bases[key] * spec.factor;
     const samples = [];
-    for (let i = 0; i < 7; i += 1) {
-      const ratio = 0.72 + i * 0.045;
+    for (let i = 0; i < 8; i += 1) {
+      const ratio = 0.68 + i * 0.05;
       samples.push(Number((value * ratio).toFixed(spec.precision + 1)));
     }
 
     telemetry[key] = {
       value: Number(value.toFixed(spec.precision)),
       unit: spec.unit,
-      delta: `+${(samples[6] - samples[5]).toFixed(spec.precision)} ${spec.label}`,
+      delta: `+${(samples[samples.length - 1] - samples[samples.length - 2]).toFixed(spec.precision)} ${spec.label}`,
       samples,
     };
   });
@@ -57,30 +84,125 @@ function buildSensorTelemetry(health) {
   return telemetry;
 }
 
-function normalizeMaintenanceLog(verification, health) {
-  const verifiedAt = verification?.verified_at ?? health?.evaluated_at ?? new Date().toISOString();
-  const asset = verification?.asset_id ?? health?.asset_id ?? "unknown_asset";
-  const status = verification?.verification_status?.toUpperCase() ?? "PENDING";
+function normalizeLiveSensorTelemetry(snapshot) {
+  const sensors = snapshot?.sensors;
+  if (!sensors || typeof sensors !== "object") {
+    return null;
+  }
 
-  return [
-    {
-      timestamp: verifiedAt,
-      unit: asset.toUpperCase(),
-      operator: "AUTO_SYS_A1",
-      status,
-      verified: status === "CONFIRMED",
-    },
-    {
-      timestamp: health?.evaluated_at ?? verifiedAt,
-      unit: asset.toUpperCase(),
-      operator: "ORCH_ENGINE",
-      status: "ANALYZED",
-      verified: true,
-    },
-  ];
+  const definitions = {
+    strain: { unit: "me", label: "variance", precision: 1 },
+    vibration: { unit: "mm/s", label: "trend", precision: 2 },
+    temperature: { unit: "C", label: "spike", precision: 1 },
+    tilt: { unit: "deg", label: "drift", precision: 2 },
+  };
+
+  const normalized = {};
+  for (const [key, spec] of Object.entries(definitions)) {
+    const metric = sensors[key];
+    const value = Number(metric?.value);
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+
+    const samples = Array.isArray(metric?.samples)
+      ? metric.samples.map((sample) => Number(sample)).filter((sample) => Number.isFinite(sample))
+      : [];
+    const normalizedSamples = samples.length ? samples : [value];
+    const delta =
+      typeof metric?.delta === "string" && metric.delta.trim()
+        ? metric.delta
+        : `+0.${"0".repeat(spec.precision)} ${spec.label}`;
+
+    normalized[key] = {
+      value: Number(value.toFixed(spec.precision)),
+      unit: metric?.unit || spec.unit,
+      delta,
+      samples: normalizedSamples,
+    };
+  }
+
+  return normalized;
+}
+
+function classifyHttpCode(status) {
+  if (status === 401) {
+    return "UNAUTHORIZED";
+  }
+  if (status === 403) {
+    return "FORBIDDEN";
+  }
+  if (status === 404) {
+    return "NOT_FOUND";
+  }
+  if (status >= 500) {
+    return "UPSTREAM_ERROR";
+  }
+  return "HTTP_ERROR";
+}
+
+function inferFriendlyBlockchainMessage(error) {
+  const raw = String(error?.message || "unknown error");
+  if (/1010/.test(raw)) {
+    return "Sepolia RPC blocked by provider firewall (1010). Switch to a fallback RPC endpoint.";
+  }
+  if (/timeout|timed out/i.test(raw) || error?.code === "TIMEOUT" || error?.code === "BLOCKCHAIN_TIMEOUT") {
+    return "Sepolia connectivity check timed out. Retry or switch RPC endpoint.";
+  }
+  if (/expected.*11155111|wrong chain|chain_id/i.test(raw)) {
+    return "Connected RPC is not Sepolia. Use chain ID 11155111.";
+  }
+  if (/unauthorized|forbidden|dev-token|401|403/i.test(raw) || error?.code === "UNAUTHORIZED") {
+    return "Gateway authorization failed. Ensure Bearer dev-token is configured.";
+  }
+  return `Sepolia connection failed: ${raw}`;
+}
+
+function defaultBlockchainConnection(verification) {
+  return {
+    connected: false,
+    network: "sepolia",
+    expected_chain_id: 11155111,
+    chain_id: null,
+    latest_block: null,
+    contract_address: verification?.contract_address ?? null,
+    contract_deployed: null,
+    checked_at: new Date().toISOString(),
+    code: null,
+    message: "Click 'Connect Sepolia' to validate live blockchain access.",
+    source: "dashboard",
+  };
+}
+
+function buildMaintenanceLogByAsset(assets, verification, healthByAsset) {
+  const logs = {};
+
+  assets.forEach((asset, index) => {
+    const health = healthByAsset[asset.asset_id];
+    const baseTime = health?.evaluated_at ?? new Date().toISOString();
+    logs[asset.asset_id] = [
+      {
+        timestamp: baseTime,
+        unit: asset.asset_id.toUpperCase(),
+        operator: index % 2 === 0 ? "AUTO_SYS_A1" : "ORCH_ENGINE",
+        status: verification?.asset_id === asset.asset_id ? String(verification.verification_status || "PENDING").toUpperCase() : "ANALYZED",
+        verified: verification?.asset_id === asset.asset_id ? String(verification.verification_status || "").toLowerCase() === "confirmed" : true,
+      },
+      {
+        timestamp: new Date(new Date(baseTime).getTime() - 2 * 60 * 60 * 1000).toISOString(),
+        unit: asset.asset_id.toUpperCase(),
+        operator: "TEAM_FIELD_12",
+        status: "SCHEDULED",
+        verified: false,
+      },
+    ];
+  });
+
+  return logs;
 }
 
 async function fetchJson(path, { auth = true, method = "GET", body = undefined } = {}) {
+  const endpoint = path;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DASHBOARD_CONFIG.requestTimeoutMs);
 
@@ -101,46 +223,69 @@ async function fetchJson(path, { auth = true, method = "GET", body = undefined }
     });
 
     if (!response.ok) {
-      let details = `HTTP ${response.status} for ${path}`;
+      let message = `HTTP ${response.status} for ${path}`;
+      let parsed = null;
       try {
-        const errorBody = await response.json();
-        const message = errorBody?.error?.message || errorBody?.detail;
-        if (message) {
-          details = String(message);
-        }
+        parsed = await response.json();
       } catch (_error) {
-        // Ignore non-JSON errors and keep default HTTP details.
+        parsed = null;
       }
-      throw new Error(details);
+
+      const code = parsed?.error?.code || classifyHttpCode(response.status);
+      if (parsed?.error?.message) {
+        message = String(parsed.error.message);
+      } else if (parsed?.detail) {
+        message = String(parsed.detail);
+      }
+
+      throw new DashboardApiError({
+        code,
+        message,
+        endpoint,
+        status: response.status,
+        details: parsed,
+      });
     }
 
     return await response.json();
+  } catch (error) {
+    if (error instanceof DashboardApiError) {
+      throw error;
+    }
+
+    if (error?.name === "AbortError") {
+      throw new DashboardApiError({
+        code: "TIMEOUT",
+        message: `Request timed out for ${path}`,
+        endpoint,
+      });
+    }
+
+    throw new DashboardApiError({
+      code: "NETWORK_ERROR",
+      message: error?.message || `Network error for ${path}`,
+      endpoint,
+    });
   } finally {
     clearTimeout(timer);
   }
 }
 
-function selectPrimaryAsset(assets, healthByAsset) {
-  if (!assets || assets.length === 0) {
-    return null;
-  }
-
-  let selected = assets[0];
-  let highest = -1;
-
-  assets.forEach((asset) => {
-    const health = healthByAsset[asset.asset_id];
-    const probability = Number(health?.failure_probability_72h ?? 0);
-    if (probability > highest) {
-      highest = probability;
-      selected = asset;
-    }
-  });
-
-  return selected;
+function cloneMockPayload(error = null) {
+  const payload = JSON.parse(JSON.stringify(MOCK_DATA));
+  payload.generatedAt = new Date().toISOString();
+  payload.walletConnection = emptyWalletStatus();
+  payload.error = error
+    ? {
+        code: error.code || "MOCK_FALLBACK",
+        message: error.message || "Using fallback data.",
+        endpoint: error.endpoint || null,
+      }
+    : null;
+  return payload;
 }
 
-export async function loadDashboardData() {
+export async function loadDashboardData(previousPayload = null) {
   try {
     const [gatewayHealth, assetsResponse] = await Promise.all([
       fetchJson("/health", { auth: false }),
@@ -149,82 +294,113 @@ export async function loadDashboardData() {
 
     const assets = assetsResponse.data ?? [];
     if (!assets.length) {
-      return MOCK_DATA;
+      return {
+        payload: cloneMockPayload(new DashboardApiError({ code: "NO_ASSETS", message: "No assets returned by API.", endpoint: "/assets" })),
+        stale: true,
+      };
     }
 
-    const healthResponses = await Promise.all(
+    const healthByAsset = {};
+    const forecastByAsset = {};
+    const sensorsByAsset = {};
+
+    await Promise.all(
       assets.map(async (asset) => {
+        const healthResponse = await fetchJson(`/assets/${asset.asset_id}/health`, { auth: true });
+        const health = healthResponse.data;
+        healthByAsset[asset.asset_id] = health;
+
         try {
-          const health = await fetchJson(`/assets/${asset.asset_id}/health`, { auth: true });
-          return [asset.asset_id, health.data];
+          const telemetryResponse = await fetchJson(`/telemetry/${asset.asset_id}/latest`, { auth: true });
+          const liveTelemetry = normalizeLiveSensorTelemetry(telemetryResponse?.data);
+          sensorsByAsset[asset.asset_id] = liveTelemetry || buildSensorTelemetry(health);
         } catch (_error) {
-          return [asset.asset_id, null];
+          sensorsByAsset[asset.asset_id] = buildSensorTelemetry(health);
+        }
+
+        try {
+          const forecastResponse = await fetchJson(`/assets/${asset.asset_id}/forecast?horizon_hours=72`, { auth: true });
+          const forecast = forecastResponse.data ?? {};
+          forecastByAsset[asset.asset_id] = {
+            ...forecast,
+            asset_id: asset.asset_id,
+            points: normalizeForecastPoints(forecast),
+          };
+        } catch (_error) {
+          forecastByAsset[asset.asset_id] = buildSyntheticForecast(asset.asset_id, health);
         }
       }),
     );
 
-    const healthByAsset = Object.fromEntries(healthResponses);
-    const primaryAsset = selectPrimaryAsset(assets, healthByAsset) ?? assets[0];
+    const verificationResponse = await fetchJson(`/maintenance/${DASHBOARD_CONFIG.maintenanceIdFallback}/verification`, { auth: true });
+    const verification = verificationResponse.data ?? null;
 
-    const [forecastResponse, verificationResponse] = await Promise.all([
-      fetchJson(`/assets/${primaryAsset.asset_id}/forecast?horizon_hours=72`, { auth: true }),
-      fetchJson(`/maintenance/${DASHBOARD_CONFIG.maintenanceIdFallback}/verification`, { auth: true }),
-    ]);
-
-    const health = healthByAsset[primaryAsset.asset_id] ?? MOCK_DATA.health;
-    const forecast = forecastResponse.data ?? MOCK_DATA.forecast;
-    const verification = verificationResponse.data ?? MOCK_DATA.verification;
-
-    return {
+    const payload = {
       source: "live",
+      stale: false,
+      error: null,
+      generatedAt: new Date().toISOString(),
       gatewayHealth,
       assets,
-      health,
-      forecast: {
-        ...forecast,
-        points: normalizeForecastPoints(forecast),
-      },
+      healthByAsset,
+      forecastByAsset,
+      sensorsByAsset,
+      maintenanceLogByAsset: buildMaintenanceLogByAsset(assets, verification, healthByAsset),
       verification,
-      blockchainConnection: {
-        connected: false,
-        network: "sepolia",
-        expected_chain_id: 11155111,
-        chain_id: null,
-        latest_block: null,
-        contract_address: verification.contract_address ?? null,
-        contract_deployed: null,
-        checked_at: new Date().toISOString(),
-        message: "Click 'Connect Sepolia' to validate live blockchain access.",
-        source: "dashboard",
-      },
+      blockchainConnection: defaultBlockchainConnection(verification),
       walletConnection: emptyWalletStatus(),
-      maintenanceLog: normalizeMaintenanceLog(verification, health),
-      sensors: buildSensorTelemetry(health),
     };
-  } catch (_error) {
-    return MOCK_DATA;
+
+    return { payload, stale: false };
+  } catch (error) {
+    if (previousPayload) {
+      return {
+        payload: {
+          ...previousPayload,
+          stale: true,
+          generatedAt: new Date().toISOString(),
+          error: {
+            code: error?.code || "UNKNOWN",
+            message: error?.message || "Failed to refresh data.",
+            endpoint: error?.endpoint || null,
+          },
+        },
+        stale: true,
+      };
+    }
+
+    return {
+      payload: cloneMockPayload(error),
+      stale: true,
+    };
   }
 }
 
 export async function connectToSepolia() {
   try {
-    return await fetchJson("/blockchain/connect", {
+    const response = await fetchJson("/blockchain/connect", {
       auth: true,
       method: "POST",
       body: {},
     });
+
+    return {
+      ...defaultBlockchainConnection(null),
+      ...response,
+      checked_at: response.checked_at || new Date().toISOString(),
+      code: response.code || null,
+      message: response.message || "Connected to Sepolia.",
+      source: response.source || "dashboard",
+    };
   } catch (error) {
     return {
-      connected: false,
-      network: "sepolia",
-      expected_chain_id: 11155111,
-      chain_id: null,
-      latest_block: null,
-      contract_address: null,
-      contract_deployed: null,
+      ...defaultBlockchainConnection(null),
       checked_at: new Date().toISOString(),
-      message: `Sepolia connection failed: ${error.message}`,
+      code: error?.code || "UNKNOWN",
+      message: inferFriendlyBlockchainMessage(error),
       source: "dashboard",
     };
   }
 }
+
+export { DashboardApiError };
