@@ -35,6 +35,81 @@ let assistantSendInFlight = false;
 let assistantSpeechRecognition = null;
 let assistantMicListening = false;
 let assistantMicBlocked = false;
+let telemetryEventSource = null;
+let telemetryStreamAssetId = null;
+
+function stopTelemetryStream() {
+  if (telemetryEventSource) {
+    try {
+      telemetryEventSource.close();
+    } catch (_error) {
+      // Ignore close errors.
+    }
+  }
+  telemetryEventSource = null;
+  telemetryStreamAssetId = null;
+}
+
+function ensureTelemetryStream(assetId) {
+  const id = typeof assetId === "string" ? assetId.trim() : "";
+  if (!id) {
+    stopTelemetryStream();
+    return;
+  }
+  if (telemetryStreamAssetId === id && telemetryEventSource) {
+    return;
+  }
+
+  stopTelemetryStream();
+
+  const token = encodeURIComponent(DASHBOARD_CONFIG.authToken || "");
+  const endpoint = `/telemetry/${encodeURIComponent(id)}/stream?token=${token}`;
+  telemetryStreamAssetId = id;
+
+  try {
+    telemetryEventSource = new EventSource(endpoint);
+  } catch (_error) {
+    telemetryEventSource = null;
+    telemetryStreamAssetId = null;
+    return;
+  }
+
+  telemetryEventSource.onmessage = (event) => {
+    if (!event?.data) {
+      return;
+    }
+    let telemetry = null;
+    try {
+      telemetry = JSON.parse(event.data);
+    } catch (_error) {
+      return;
+    }
+    const sensors = telemetry?.sensors;
+    if (!sensors || typeof sensors !== "object") {
+      return;
+    }
+    if (!lastPayload) {
+      return;
+    }
+
+    // Patch in latest sensor card metrics without re-fetching the whole dashboard.
+    lastPayload = {
+      ...lastPayload,
+      source: lastPayload.source || "live",
+      generatedAt: new Date().toISOString(),
+      sensorsByAsset: {
+        ...(lastPayload.sensorsByAsset || {}),
+        [id]: sensors,
+      },
+      error: null,
+    };
+    renderCurrent();
+  };
+
+  telemetryEventSource.addEventListener("error", () => {
+    // Keep the UI usable even if SSE fails; periodic refresh still runs.
+  });
+}
 
 function setupSectionTabs(onTabChange) {
   const triggers = Array.from(document.querySelectorAll(".tab-trigger"));
@@ -127,6 +202,7 @@ function renderCurrent() {
 
   const viewModel = createViewModel(payload, { selectedAssetId });
   selectedAssetId = viewModel.selectedAssetId;
+  ensureTelemetryStream(selectedAssetId);
 
   renderDashboard(viewModel, {
     activeTab: activeTabTarget,
@@ -964,6 +1040,10 @@ async function boot() {
   setupFirebaseConnectorControls();
   setupHeaderActions();
   setupAssistantWidget();
+
+  window.addEventListener("beforeunload", () => {
+    stopTelemetryStream();
+  });
 
   if (refreshHandle) {
     clearInterval(refreshHandle);

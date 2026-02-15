@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import asyncio
 import json
 import logging
 import socket
@@ -14,7 +15,7 @@ from urllib import request as url_request
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import ValidationError
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from .config import get_settings
 from .errors import ApiError, build_meta
@@ -65,6 +66,25 @@ logger = logging.getLogger("api_gateway")
 _settings = get_settings()
 _metrics = get_metrics()
 _store = get_store()
+
+
+def _auth_from_query_token(request: Request, token: str | None) -> AuthContext:
+    """Auth helper for browser EventSource (cannot set Authorization headers)."""
+
+    if not _settings.auth_enabled:
+        return AuthContext(subject="anonymous", token="", roles=frozenset({"anonymous"}))
+
+    raw = (token or "").strip()
+    if not raw or raw not in _settings.auth_tokens:
+        raise ApiError(
+            status_code=401,
+            code="UNAUTHORIZED",
+            message="Missing or invalid authentication token.",
+            trace_id=request.headers.get("x-trace-id"),
+        )
+
+    roles = _settings.token_roles.get(raw, frozenset({"operator"}))
+    return AuthContext(subject="gateway-client", token=raw, roles=frozenset(roles))
 
 
 def _trace_id(request: Request) -> str:
@@ -1521,6 +1541,54 @@ def get_latest_telemetry(
         captured_at=telemetry.captured_at.isoformat(),
     )
     return AssetTelemetryResponse(data=telemetry, meta=build_meta())
+
+
+@router.get("/telemetry/{asset_id}/stream", include_in_schema=False)
+async def stream_latest_telemetry(
+    asset_id: str,
+    request: Request,
+    token: str | None = Query(default=None),
+) -> StreamingResponse:
+    """Server-Sent Events stream for low-latency telemetry refresh (~1s).
+
+    Uses `?token=...` instead of Authorization headers because EventSource
+    cannot set custom headers.
+    """
+
+    trace_id = _trace_id(request)
+    auth = _auth_from_query_token(request, token)
+    enforce_rate_limit(request, auth)
+    _with_metrics("/telemetry/{asset_id}/stream")
+
+    async def event_gen():
+        # Send an initial comment so proxies start streaming immediately.
+        yield f": stream started trace_id={trace_id}\n\n"
+        while True:
+            if await request.is_disconnected():
+                break
+
+            try:
+                payload = await asyncio.to_thread(_fetch_sensor_telemetry, asset_id, trace_id)
+                telemetry = AssetTelemetry.model_validate(payload)
+                data = telemetry.model_dump(mode="json")
+                yield f"data: {json.dumps(data, separators=(',', ':'))}\n\n"
+            except ApiError as exc:
+                err = {"code": exc.code, "message": exc.message, "trace_id": exc.trace_id or trace_id}
+                yield f"event: error\ndata: {json.dumps(err, separators=(',', ':'))}\n\n"
+            except Exception as exc:  # defensive: keep stream alive
+                err = {"code": "STREAM_ERROR", "message": str(exc), "trace_id": trace_id}
+                yield f"event: error\ndata: {json.dumps(err, separators=(',', ':'))}\n\n"
+
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "cache-control": "no-store",
+            "x-accel-buffering": "no",
+        },
+    )
 
 
 @router.get("/automation/incidents", response_model=AutomationIncidentListResponse)
