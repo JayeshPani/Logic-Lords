@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
@@ -37,6 +38,30 @@ async def dashboard() -> FileResponse:
     if not _dashboard_index.exists():
         raise HTTPException(status_code=404, detail="Dashboard web assets not found.")
     return FileResponse(_dashboard_index)
+
+
+@app.get("/dashboard-config.js", include_in_schema=False)
+async def dashboard_config_js() -> Response:
+    """Serve runtime dashboard defaults (no rebuild required)."""
+
+    payload = {
+        "firebase": {
+            "enabled": bool(settings.dashboard_firebase_enabled),
+            "dbUrl": settings.dashboard_firebase_db_url.strip(),
+            "basePath": settings.dashboard_firebase_base_path.strip()
+            or "infraguard/telemetry",
+        }
+    }
+    script = (
+        "window.__INFRAGUARD_DASHBOARD_CONFIG__ = "
+        + json.dumps(payload, separators=(",", ":"))
+        + ";"
+    )
+    return Response(
+        content=script,
+        media_type="application/javascript",
+        headers={"cache-control": "no-store"},
+    )
 
 
 @app.exception_handler(ApiError)

@@ -1,57 +1,221 @@
 # InfraGuard
 
-AI-based urban infrastructure health monitoring platform with autonomous orchestration and blockchain verification.
+AI-based urban infrastructure monitoring platform with autonomous safety escalation, organization evidence workflows, and blockchain verification.
 
-## Goals
+## Current Scope
+InfraGuard is implemented as a contract-first, event-driven system that combines:
+- IoT telemetry ingestion (ESP32 -> Firebase -> sensor-ingestion-service)
+- AI risk computation (forecast, anomaly, fuzzy inference, health score)
+- Operational orchestration (inspection + maintenance lifecycle)
+- Automated escalation (management acknowledgement SLA -> police escalation)
+- Evidence-backed ledger verification (organization upload + explicit submit + tracking)
+- Operator dashboard (risk, map, nodes, automation, maintenance, ledger)
 
-- Continuously monitor roads, bridges, and related assets with IoT sensors.
-- Predict near-term failure risk with hybrid AI models.
-- Trigger autonomous operational workflows via OpenClaw.
-- Record maintenance evidence and verification on blockchain.
+## Key Capabilities
+- Live or fallback telemetry for city assets.
+- 72h risk and health visualization.
+- Realtime LSTM overview feed in dashboard.
+- Firebase node registry panel in dashboard (global node view).
+- City Map tab with geographic rendering + fallback mode.
+- Management notification + acknowledgement workflow.
+- Automatic police escalation when SLA expires.
+- Organization evidence upload (file + metadata), finalize (SHA-256), and explicit verification submit.
+- Ledger verification status timeline (`pending/submitted/confirmed/failed`) with confirmation tracking.
+- Optional MetaMask connect for operator identity attribution (wallet not required for backend verification).
 
-## Architecture Summary
+## Repository Layout
+- `apps/`
+  - `api-gateway`: boundary API, auth/rate-limit, dashboard/static serving, upstream proxying.
+  - `orchestration-service`: workflow engine, escalation state machine, verification submit trigger.
+  - `notification-service`: channel dispatch, retry/fallback.
+  - `sensor-ingestion-service`: Firebase telemetry read/normalize API.
+  - `dashboard-web`: plain HTML/CSS/JS operator UI.
+- `services/`
+  - `lstm-forecast-service`, `anomaly-detection-service`, `fuzzy-inference-service`, `health-score-service`
+  - `report-generation-service`: evidence hashing + verification command generation + evidence upload APIs
+  - `blockchain-verification-service`: deterministic/live tx mode + verification tracking
+- `firmware/esp32/firebase_dht11_mpu6050/`: ESP32 sketch for DHT11 + accelerometer -> Firebase RTDB.
+- `agents/openclaw-agent/`: OpenClaw workflow definitions for automation.
+- `contracts/`: OpenAPI + command/event/database schemas.
+- `data-platform/`: storage, streaming, ML training/evaluation artifacts.
+- `docs/`: runbooks and implementation references.
+- `tests/`: contract/integration/e2e/performance suites.
 
-- `apps/`: external-facing applications and operational services.
-- `services/`: core intelligence and domain services.
-- `agents/`: OpenClaw workflow definitions.
-- `contracts/`: API, event, and data contracts.
-- `blockchain/`: smart contracts and chain integration assets.
-- `data-platform/`: storage, streaming, and ML data foundations.
-- `infra/`: local and cloud deployment assets.
-- `tests/`: contract, integration, e2e, and performance test scaffolds.
+## End-to-End Flows
+### 1) Telemetry
+1. ESP32 pushes readings into Firebase RTDB.
+2. `sensor-ingestion-service` reads `latest/history` telemetry and computes derived metrics.
+3. `api-gateway` exposes telemetry to dashboard via `/telemetry/{asset_id}/latest`.
 
-## Core Principles
+### 2) Risk and Workflows
+1. AI services compute forecast/anomaly/risk signals.
+2. `orchestration-service` triggers incident workflows for high-risk assets.
+3. Management alerts are dispatched via notification-service.
+4. If ACK not received before SLA, police escalation is auto-triggered.
 
-- Separation of concerns by bounded modules.
-- Contract-first integration (API + event schemas).
-- Event-driven interoperability.
-- Traceable, auditable workflows.
-- Progressive implementation with stable interfaces.
+### 3) Evidence and Verification
+1. Maintenance completes and workflow enters `awaiting_evidence` state.
+2. Organization uploads evidence files and finalizes them (hash persisted).
+3. Operator submits verification explicitly.
+4. Report-generation builds canonical evidence payload and command.
+5. Blockchain-verification records and tracks confirmations.
+6. Dashboard ledger shows status/timeline.
 
-## Start Here
+## Dashboard Tabs
+- `Overview`: KPIs + realtime LSTM panel.
+- `Triage`: risk-prioritized assets.
+- `Asset Detail`: gauge, components, forecast, telemetry cards.
+- `Ledger`: Sepolia reachability, verification summary, track button, wallet status.
+- `Automation`: incident stages + acknowledgement actions.
+- `City Map`: geographic risk view.
+- `Nodes`: Firebase/global node registry and node detail.
+- `Maintenance`: organization evidence upload/list + submit verification + maintenance log.
 
-1. Read `PROJECT_PLAN.md` for scope and implementation phases.
-2. Read `IMPLEMENTATION_SEQUENCE.md` for step-by-step module build order.
-3. Review `docs/module-boundaries.md` before coding any service.
-4. Use `docs/module-implementation-blueprints.md` for module-level execution details.
-5. Verify AI feature parity in `docs/ai-integration-alignment.md`.
-6. Run local AI flow using `docs/ai-pipeline-runbook.md`.
-7. Activate trained-model runtime using `scripts/activate_trained_runtime.sh`.
-8. Run step-2 model evaluation using `data-platform/ml/evaluation/evaluate_all_models.py`.
-9. Run step-3 contract assertions using `scripts/validate_ai_contracts.py --fail-on-invalid`.
-10. Run step-2 + step-3 in one command using `make ai-check`.
-11. Bring up Module-4 storage layer using `make data-platform-up && make data-platform-migrate`.
-12. Validate Module-4 contracts + runtime behavior using `make module4-check`.
-13. Validate Module-5 fuzzy service contracts and observability using `make module5-check`.
-14. Validate Module-6 forecast service contracts and observability using `make module6-check`.
-15. Validate Module-7 anomaly service contracts and observability using `make module7-check`.
-16. Validate Module-8 health-score service contracts and observability using `make module8-check`.
-17. Validate Module-9 orchestration service contracts and workflow automation using `make module9-check`.
-18. Validate Module-10 report-generation contracts and evidence outputs using `make module10-check`.
-19. Validate Module-11 notification dispatch contracts and retry/fallback behavior using `make module11-check`.
-20. Validate Module-12 blockchain verification contracts and confirmation tracking using `make module12-check`.
-21. Deploy `InfraGuardVerification` to Sepolia (no Hardhat) using `bash blockchain/scripts/deploy_sepolia_foundry.sh`.
-22. Validate Module-13 API gateway auth/rate-limit facade and OpenAPI contract alignment using `make module13-check`.
-23. Validate Module-14 dashboard web module rendering + asset serving using `make module14-check`.
-24. Run Step-15 full test matrix (contract -> integration -> e2e -> performance) using `make module15-check`.
-25. Wire ESP32 DHT11 + accelerometer to Firebase and dashboard using `docs/firebase-telemetry-runbook.md`.
+## Local Development Quick Start
+Run from repository root (`Cental Hack`) with separate terminals.
+
+### 0) Optional: create and activate a Python venv
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install dependencies per module as needed (each module with `pyproject.toml` can be installed with `pip install -e <module-path>`).
+
+### 1) Start blockchain verification service
+```bash
+cd services/blockchain-verification-service
+python3 -m uvicorn src.main:app --reload --port 8105
+```
+
+### 2) Start report generation service (use port `8202` to match gateway/orchestration defaults)
+```bash
+cd services/report-generation-service
+python3 -m uvicorn src.main:app --reload --port 8202
+```
+
+### 3) Start notification service
+```bash
+cd apps/notification-service
+python3 -m uvicorn src.main:app --reload --port 8201
+```
+
+### 4) Start orchestration service
+```bash
+cd apps/orchestration-service
+export ORCHESTRATION_NOTIFICATION_BASE_URL="http://127.0.0.1:8201"
+export ORCHESTRATION_REPORT_GENERATION_BASE_URL="http://127.0.0.1:8202"
+export ORCHESTRATION_BLOCKCHAIN_VERIFICATION_BASE_URL="http://127.0.0.1:8105"
+python3 -m uvicorn src.main:app --reload --port 8200
+```
+
+### 5) Optional: start sensor-ingestion (for Firebase telemetry)
+```bash
+cd apps/sensor-ingestion-service
+export SENSOR_INGESTION_FIREBASE_DB_URL="https://<project-id>-default-rtdb.<region>.firebasedatabase.app"
+# export SENSOR_INGESTION_FIREBASE_AUTH_TOKEN="<optional-token>"
+python3 -m uvicorn src.main:app --reload --port 8100
+```
+
+### 6) Start API gateway + dashboard
+```bash
+cd apps/api-gateway
+export API_GATEWAY_ORCHESTRATION_BASE_URL="http://127.0.0.1:8200"
+export API_GATEWAY_REPORT_GENERATION_BASE_URL="http://127.0.0.1:8202"
+export API_GATEWAY_BLOCKCHAIN_VERIFICATION_BASE_URL="http://127.0.0.1:8105"
+export API_GATEWAY_SENSOR_INGESTION_BASE_URL="http://127.0.0.1:8100"
+export API_GATEWAY_AUTH_BEARER_TOKENS_CSV="dev-token"
+export API_GATEWAY_AUTH_TOKEN_ROLES_CSV="dev-token:organization|operator"
+export API_GATEWAY_ASSISTANT_GROQ_API_KEY="<your-groq-api-key>"
+# optional:
+# export API_GATEWAY_ASSISTANT_MODEL="llama-3.3-70b-versatile"
+python3 -m uvicorn src.main:app --reload --port 8080
+```
+
+Open:
+- Dashboard: `http://127.0.0.1:8080/dashboard`
+- Health: `http://127.0.0.1:8080/health`
+
+## API Gateway Highlights
+Public endpoints include:
+- Asset + health + forecast:
+  - `GET /assets`
+  - `GET /assets/{asset_id}/health`
+  - `GET /assets/{asset_id}/forecast`
+- Telemetry:
+  - `GET /telemetry/{asset_id}/latest`
+- LSTM realtime:
+  - `POST /lstm/realtime/ingest`
+  - `GET /lstm/realtime`
+- Automation:
+  - `GET /automation/incidents`
+  - `GET /automation/incidents/{workflow_id}`
+  - `POST /automation/incidents/{workflow_id}/acknowledge`
+- Evidence + verification:
+  - `POST /maintenance/{maintenance_id}/evidence/uploads`
+  - `POST /maintenance/{maintenance_id}/evidence/{evidence_id}/finalize`
+  - `GET /maintenance/{maintenance_id}/evidence`
+  - `POST /maintenance/{maintenance_id}/verification/submit`
+  - `GET /maintenance/{maintenance_id}/verification`
+  - `POST /maintenance/{maintenance_id}/verification/track`
+- Ledger connect:
+  - `POST /blockchain/connect`
+- Assistant chat:
+  - `POST /assistant/chat`
+
+## Firebase + ESP32 Setup
+- Firmware sketch:
+  - `firmware/esp32/firebase_dht11_mpu6050/esp32_firebase_dht11_mpu6050.ino`
+- Telemetry runbook:
+  - `docs/firebase-telemetry-runbook.md`
+
+Expected Firebase RTDB shape:
+```text
+infraguard/
+  telemetry/
+    <asset_id>/
+      latest
+      history/<push-id>
+```
+
+## Testing and Quality Gates
+Run targeted module checks:
+```bash
+make module9-check    # orchestration
+make module10-check   # report-generation
+make module11-check   # notification
+make module12-check   # blockchain verification
+make module13-check   # api-gateway
+make module14-check   # dashboard smoke
+```
+
+Run full matrix:
+```bash
+make module15-check
+```
+
+AI validation gates:
+```bash
+make ai-check
+```
+
+## Important Runtime Notes
+- Most runtime stores are intentionally in-memory for local/dev validation.
+- Dashboard wallet is optional; backend service-wallet/deterministic flow remains canonical.
+- Blockchain verification supports:
+  - `deterministic` mode (default)
+  - `live` Sepolia mode (feature-gated)
+- Evidence submit requires finalized evidence items.
+
+## Runbooks
+- Firebase telemetry: `docs/firebase-telemetry-runbook.md`
+- Safety escalation (management -> police): `docs/safety-escalation-runbook.md`
+- Evidence upload + verification: `docs/evidence-upload-verification-runbook.md`
+- Ledger + wallet integration: `docs/ledger-wallet-integration-runbook.md`
+- Full technical summary: `docs/TECHNICAL_SOFTWARE_IMPLEMENTATION_SUMMARY.md`
+
+## Deployment / Production Hardening (Next)
+- Replace in-memory stores with durable persistence.
+- Add background schedulers/queues for stronger retry guarantees.
+- Tighten Firebase and gateway auth policies for production tokens/roles.
+- Enable live Sepolia tx mode with funded service wallet and monitoring.

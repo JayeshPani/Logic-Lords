@@ -1,8 +1,12 @@
 import { DASHBOARD_CONFIG } from "./config.js";
 import {
   acknowledgeIncident,
+  clearFirebaseNodesConfig,
   connectToSepolia,
+  getFirebaseNodesConfig,
   loadDashboardData,
+  saveFirebaseNodesConfig,
+  sendAssistantChat,
   submitVerification,
   trackMaintenanceVerification,
   uploadAndFinalizeEvidence,
@@ -26,6 +30,11 @@ let verificationSubmitInFlight = false;
 let selectedEvidenceFileName = null;
 let selectedNodeId = null;
 let activateTabRef = null;
+const assistantHistory = [];
+let assistantSendInFlight = false;
+let assistantSpeechRecognition = null;
+let assistantMicListening = false;
+let assistantMicBlocked = false;
 
 function setupSectionTabs(onTabChange) {
   const triggers = Array.from(document.querySelectorAll(".tab-trigger"));
@@ -228,7 +237,11 @@ function resolveActiveMaintenanceId() {
     return incident.maintenance_id;
   }
 
-  return null;
+  const fallback =
+    typeof DASHBOARD_CONFIG.maintenanceIdFallback === "string" && DASHBOARD_CONFIG.maintenanceIdFallback.trim()
+      ? DASHBOARD_CONFIG.maintenanceIdFallback.trim()
+      : null;
+  return fallback;
 }
 
 async function trackVerificationStatus() {
@@ -497,6 +510,59 @@ function setupInteractions() {
   }
 }
 
+function setupFirebaseConnectorControls() {
+  const dbInput = document.getElementById("firebase-db-url");
+  const basePathInput = document.getElementById("firebase-base-path");
+  const authTokenInput = document.getElementById("firebase-auth-token");
+  const connectButton = document.getElementById("firebase-connect-btn");
+  const disconnectButton = document.getElementById("firebase-disconnect-btn");
+  if (!dbInput || !basePathInput || !authTokenInput || !connectButton || !disconnectButton) {
+    return;
+  }
+
+  const applyConfigToInputs = (config) => {
+    dbInput.value = config?.dbUrl || "";
+    basePathInput.value = config?.basePath || "infraguard/telemetry";
+    authTokenInput.value = config?.authToken || "";
+  };
+
+  applyConfigToInputs(getFirebaseNodesConfig());
+
+  connectButton.addEventListener("click", async () => {
+    const normalized = saveFirebaseNodesConfig({
+      enabled: true,
+      dbUrl: dbInput.value,
+      basePath: basePathInput.value,
+      authToken: authTokenInput.value,
+    });
+    applyConfigToInputs(normalized);
+    setButtonBusy(connectButton, true, "Connecting...", "Connect Firebase");
+    try {
+      await refreshDashboard();
+      connectButton.textContent = "Connected";
+      setTimeout(() => {
+        if (!connectButton.disabled) {
+          connectButton.textContent = "Connect Firebase";
+        }
+      }, 1500);
+    } finally {
+      connectButton.disabled = false;
+    }
+  });
+
+  disconnectButton.addEventListener("click", async () => {
+    const cleared = clearFirebaseNodesConfig();
+    applyConfigToInputs(cleared);
+    setButtonBusy(disconnectButton, true, "Disconnecting...", "Disconnect");
+    try {
+      await refreshDashboard();
+    } finally {
+      disconnectButton.disabled = false;
+      disconnectButton.textContent = "Disconnect";
+    }
+  });
+}
+
 function setupHeaderActions() {
   const profileButton = document.getElementById("profile-btn");
   const accountModal = document.getElementById("account-modal");
@@ -583,6 +649,309 @@ function setupHeaderActions() {
   });
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function appendAssistantMessage(role, content) {
+  const messagesEl = document.getElementById("assistant-chat-messages");
+  if (!messagesEl) {
+    return;
+  }
+  const item = document.createElement("div");
+  item.className = role === "assistant" ? "assistant-msg assistant-msg-bot" : "assistant-msg assistant-msg-user";
+  item.innerHTML = `<p>${escapeHtml(content)}</p>`;
+  messagesEl.appendChild(item);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function appendAssistantStatus(content) {
+  const messagesEl = document.getElementById("assistant-chat-messages");
+  if (!messagesEl) {
+    return null;
+  }
+  messagesEl.querySelectorAll(".assistant-status").forEach((node) => node.remove());
+  const item = document.createElement("div");
+  item.className = "assistant-status";
+  item.textContent = content;
+  messagesEl.appendChild(item);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return item;
+}
+
+function assistantFallbackReply(message, languageMode = "auto") {
+  const text = String(message || "").toLowerCase();
+  const asksModules =
+    /module|architecture|flow|service|what does|explain|component|workflow|orchestration|ledger|blockchain|firebase/.test(
+      text,
+    );
+  const asksTroubleshoot =
+    /error|not working|fix|debug|failed|timeout|503|429|404|issue|problem/.test(text);
+
+  const enBase = asksModules
+    ? [
+      "AI assistant backend is currently unavailable, so I am answering in local fallback mode.",
+      "InfraGuard module quick map:",
+      "1. Sensor ingestion: reads Firebase telemetry and normalizes metrics.",
+      "2. API Gateway: auth, rate-limit, and proxy to all services.",
+      "3. Orchestration: incident lifecycle, ACK SLA, and escalation.",
+      "4. Report generation: evidence hash and verification command.",
+      "5. Blockchain verification: submit/track verification state.",
+      "6. Dashboard: operator UI for triage, nodes, maintenance, ledger.",
+    ].join("\n")
+    : asksTroubleshoot
+      ? [
+        "AI assistant backend is currently unavailable, fallback mode is active.",
+        "Quick checks:",
+        "1. Restart API gateway with latest code.",
+        "2. Set `API_GATEWAY_ASSISTANT_GROQ_API_KEY`.",
+        "3. Verify `/assistant/chat` exists and returns non-404.",
+        "4. Hard refresh the dashboard (Cmd+Shift+R).",
+      ].join("\n")
+      : "AI assistant backend is currently unavailable. Please retry in a moment. I can still provide module and troubleshooting guidance locally.";
+
+  const hiBase = asksModules
+    ? [
+      "AI assistant backend abhi unavailable hai, isliye main local fallback mode mein jawab de raha hoon.",
+      "InfraGuard module quick map:",
+      "1. Sensor ingestion: Firebase telemetry read karke metrics normalize karta hai.",
+      "2. API Gateway: auth, rate-limit, aur sab services ko proxy karta hai.",
+      "3. Orchestration: incident lifecycle, ACK SLA, aur escalation.",
+      "4. Report generation: evidence hash aur verification command.",
+      "5. Blockchain verification: verification state submit/track.",
+      "6. Dashboard: triage, nodes, maintenance, ledger UI.",
+    ].join("\n")
+    : asksTroubleshoot
+      ? [
+        "AI assistant backend unavailable hai, fallback mode active hai.",
+        "Quick checks:",
+        "1. API gateway latest code ke saath restart karo.",
+        "2. `API_GATEWAY_ASSISTANT_GROQ_API_KEY` set karo.",
+        "3. `/assistant/chat` endpoint 404 na de, yeh verify karo.",
+        "4. Dashboard hard refresh karo (Cmd+Shift+R).",
+      ].join("\n")
+      : "AI assistant backend abhi unavailable hai. Thodi der baad retry karein. Main local mode mein module aur troubleshooting help de sakta hoon.";
+
+  const mode = String(languageMode || "auto").toLowerCase();
+  if (mode === "english") {
+    return enBase;
+  }
+  if (mode === "hindi") {
+    return hiBase;
+  }
+  if (mode === "bilingual") {
+    return `${enBase}\n\n---\n\n${hiBase}`;
+  }
+
+  const hasHindi = /[\u0900-\u097f]/.test(message || "");
+  return hasHindi ? hiBase : enBase;
+}
+
+function setAssistantMicState(active) {
+  assistantMicListening = active;
+  const micBtn = document.getElementById("assistant-chat-mic-btn");
+  if (!micBtn) {
+    return;
+  }
+  micBtn.classList.toggle("assistant-mic-live", active);
+  micBtn.textContent = active ? "Listening..." : "Mic";
+}
+
+function setupAssistantMic(languageSelect, inputEl, micBtn) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition || !inputEl || !micBtn) {
+    if (micBtn) {
+      micBtn.disabled = true;
+      micBtn.textContent = "Mic N/A";
+    }
+    return;
+  }
+  if (assistantMicBlocked) {
+    micBtn.disabled = true;
+    micBtn.textContent = "Mic Blocked";
+    return;
+  }
+  micBtn.disabled = false;
+  if (!assistantMicListening) {
+    micBtn.textContent = "Mic";
+  }
+  if (assistantSpeechRecognition && assistantMicListening) {
+    try {
+      assistantSpeechRecognition.stop();
+    } catch (_error) {
+      // Ignore stop errors during reconfiguration.
+    }
+  }
+  assistantSpeechRecognition = new Recognition();
+  assistantSpeechRecognition.continuous = false;
+  assistantSpeechRecognition.interimResults = false;
+  assistantSpeechRecognition.maxAlternatives = 1;
+  assistantSpeechRecognition.onstart = () => setAssistantMicState(true);
+  assistantSpeechRecognition.onend = () => setAssistantMicState(false);
+  assistantSpeechRecognition.onerror = (event) => {
+    setAssistantMicState(false);
+    const code = String(event?.error || "").toLowerCase();
+    if (code === "not-allowed" || code === "service-not-allowed" || code === "audio-capture") {
+      assistantMicBlocked = true;
+      micBtn.disabled = true;
+      micBtn.textContent = "Mic Blocked";
+      appendAssistantStatus("Microphone permission blocked by browser. Enable mic permission, then reload.");
+      return;
+    }
+    appendAssistantStatus("Microphone input failed. Type your question instead.");
+  };
+  assistantSpeechRecognition.onresult = (event) => {
+    const transcript = event?.results?.[0]?.[0]?.transcript || "";
+    if (!transcript) {
+      return;
+    }
+    inputEl.value = `${inputEl.value} ${transcript}`.trim();
+    inputEl.focus();
+  };
+
+  const selectedLanguage = String(languageSelect?.value || "auto").toLowerCase();
+  if (selectedLanguage === "hindi") {
+    assistantSpeechRecognition.lang = "hi-IN";
+  } else {
+    assistantSpeechRecognition.lang = "en-US";
+  }
+}
+
+async function handleAssistantSend() {
+  if (assistantSendInFlight) {
+    return;
+  }
+  const inputEl = document.getElementById("assistant-chat-input");
+  const languageEl = document.getElementById("assistant-chat-language");
+  const sendBtn = document.getElementById("assistant-chat-send-btn");
+  if (!inputEl || !languageEl || !sendBtn) {
+    return;
+  }
+
+  const message = String(inputEl.value || "").trim();
+  if (!message) {
+    return;
+  }
+
+  assistantSendInFlight = true;
+  inputEl.disabled = true;
+  sendBtn.disabled = true;
+  appendAssistantMessage("user", message);
+  assistantHistory.push({ role: "user", content: message });
+  inputEl.value = "";
+  const statusNode = appendAssistantStatus("InfraGuard Assistant is thinking...");
+  const selectedLanguage = languageEl.value || "auto";
+
+  try {
+    const response = await sendAssistantChat({
+      message,
+      language: selectedLanguage,
+      history: assistantHistory.slice(-8),
+    });
+    const reply = response?.reply || "No response from assistant.";
+    appendAssistantMessage("assistant", reply);
+    assistantHistory.push({ role: "assistant", content: reply });
+  } catch (error) {
+    const code = String(error?.code || "");
+    const messageText = String(error?.message || "");
+    if (code === "NOT_FOUND" || code.startsWith("ASSISTANT_") || code === "NETWORK_ERROR" || code === "TIMEOUT") {
+      const fallback = assistantFallbackReply(message, selectedLanguage);
+      appendAssistantMessage("assistant", fallback);
+      assistantHistory.push({ role: "assistant", content: fallback });
+      if (code === "NOT_FOUND") {
+        appendAssistantStatus("Assistant endpoint not found. Restart API gateway with latest code.");
+      }
+    } else {
+      appendAssistantMessage(
+        "assistant",
+        `I could not complete that request. ${messageText || "Please try again."}`,
+      );
+    }
+  } finally {
+    if (statusNode && statusNode.parentElement) {
+      statusNode.remove();
+    }
+    assistantSendInFlight = false;
+    inputEl.disabled = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+
+function setupAssistantWidget() {
+  const toggleBtn = document.getElementById("assistant-chat-toggle");
+  const panel = document.getElementById("assistant-chat-panel");
+  const closeBtn = document.getElementById("assistant-chat-close-btn");
+  const sendBtn = document.getElementById("assistant-chat-send-btn");
+  const inputEl = document.getElementById("assistant-chat-input");
+  const micBtn = document.getElementById("assistant-chat-mic-btn");
+  const languageEl = document.getElementById("assistant-chat-language");
+  const messagesEl = document.getElementById("assistant-chat-messages");
+  if (!toggleBtn || !panel || !closeBtn || !sendBtn || !inputEl || !micBtn || !languageEl || !messagesEl) {
+    return;
+  }
+
+  if (!messagesEl.dataset.initialized) {
+    appendAssistantMessage(
+      "assistant",
+      "Hi, I am InfraGuard Assistant. Ask me about any module, workflow, or operations issue in English or Hindi.",
+    );
+    messagesEl.dataset.initialized = "true";
+  }
+
+  toggleBtn.addEventListener("click", () => {
+    const isHidden = panel.hidden;
+    panel.hidden = !isHidden;
+    toggleBtn.setAttribute("aria-expanded", isHidden ? "true" : "false");
+    if (isHidden) {
+      inputEl.focus();
+    }
+  });
+
+  closeBtn.addEventListener("click", () => {
+    panel.hidden = true;
+    toggleBtn.setAttribute("aria-expanded", "false");
+  });
+
+  sendBtn.addEventListener("click", async () => {
+    await handleAssistantSend();
+  });
+
+  inputEl.addEventListener("keydown", async (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      await handleAssistantSend();
+    }
+  });
+
+  languageEl.addEventListener("change", () => {
+    setupAssistantMic(languageEl, inputEl, micBtn);
+  });
+
+  setupAssistantMic(languageEl, inputEl, micBtn);
+
+  micBtn.addEventListener("click", () => {
+    if (!assistantSpeechRecognition) {
+      appendAssistantStatus("Microphone input is not supported in this browser.");
+      return;
+    }
+    if (assistantMicListening) {
+      assistantSpeechRecognition.stop();
+      return;
+    }
+    try {
+      assistantSpeechRecognition.start();
+    } catch (_error) {
+      appendAssistantStatus("Microphone is busy. Try again.");
+    }
+  });
+}
+
 async function boot() {
   setupSectionTabs(() => {
     renderCurrent();
@@ -592,7 +961,9 @@ async function boot() {
 
   await refreshDashboard();
   setupInteractions();
+  setupFirebaseConnectorControls();
   setupHeaderActions();
+  setupAssistantWidget();
 
   if (refreshHandle) {
     clearInterval(refreshHandle);

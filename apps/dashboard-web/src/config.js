@@ -1,3 +1,6 @@
+const SERVER_CONFIG = globalThis.__INFRAGUARD_DASHBOARD_CONFIG__ || {};
+const SERVER_FIREBASE = SERVER_CONFIG.firebase || {};
+
 export const DASHBOARD_CONFIG = Object.freeze({
   refreshIntervalMs: 30000,
   clockIntervalMs: 1000,
@@ -5,12 +8,11 @@ export const DASHBOARD_CONFIG = Object.freeze({
   authToken: "dev-token",
   commandCenter: "METRO-NORTH_UNIT_04",
   maintenanceIdFallback: "mnt_20260214_0012",
-  weather: {
-    temperatureC: 24,
-    humidityPct: 62,
-    windKmh: 12,
-    windDirection: "NW",
-  },
+  firebase: Object.freeze({
+    enabled: Boolean(SERVER_FIREBASE.enabled),
+    dbUrl: String(SERVER_FIREBASE.dbUrl || "").trim(),
+    basePath: String(SERVER_FIREBASE.basePath || "infraguard/telemetry").trim() || "infraguard/telemetry",
+  }),
 });
 
 export const MAP_CONFIG = Object.freeze({

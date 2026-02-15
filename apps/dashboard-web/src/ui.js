@@ -626,15 +626,21 @@ export function renderDashboard(viewModel, options = {}) {
   const selectedEvidenceFileName = options.selectedEvidenceFileName || null;
   const isUploadingEvidence = Boolean(options.isUploadingEvidence);
   const isSubmittingVerification = Boolean(options.isSubmittingVerification);
+
+  const sourceRaw = String(viewModel?.overviewModel?.source || viewModel?.source || "unknown");
+  const sourceLabel = sourceRaw.toUpperCase();
+  const syncRaw = viewModel?.overviewModel?.generatedAt || viewModel?.generatedAt || null;
+  const syncDate = syncRaw ? new Date(syncRaw) : null;
+  const syncLabel =
+    syncDate && !Number.isNaN(syncDate.getTime())
+      ? `${syncDate.toISOString().slice(11, 19)} UTC`
+      : "--:--:-- UTC";
+  const criticalCount = Number(viewModel?.overviewModel?.criticalAssets ?? 0);
+
   setText("command-center-value", DASHBOARD_CONFIG.commandCenter);
-  setText(
-    "weather-temp",
-    `${DASHBOARD_CONFIG.weather.temperatureC}C / HUM ${DASHBOARD_CONFIG.weather.humidityPct}%`,
-  );
-  setText(
-    "weather-wind",
-    `${DASHBOARD_CONFIG.weather.windKmh}KM/H ${DASHBOARD_CONFIG.weather.windDirection}`,
-  );
+  setText("ops-data-source", `SOURCE ${sourceLabel}`);
+  setText("ops-last-sync", `SYNC ${syncLabel}`);
+  setText("ops-critical-assets", `CRITICAL ${criticalCount}`);
   renderOverviewKpis(viewModel.overviewModel);
   renderOverviewLstmPanel(
     viewModel.lstmOverviewModel,

@@ -1,4 +1,4 @@
-import { CHART_THRESHOLDS, SEVERITY_ORDER } from "./config.js";
+import { CHART_THRESHOLDS, DASHBOARD_CONFIG, SEVERITY_ORDER } from "./config.js";
 import { emptyWalletStatus } from "./wallet.js";
 
 function clamp01(value) {
@@ -508,7 +508,12 @@ export function createViewModel(raw, { selectedAssetId = null } = {}) {
 
   const assetDetailModel = buildAssetDetailModel(raw, selectedAsset, assetRows);
   const automationModel = buildAutomationModel(raw);
-  const activeMaintenanceId = raw.activeMaintenanceId || raw.verification?.maintenance_id || null;
+  const fallbackMaintenanceId =
+    typeof DASHBOARD_CONFIG.maintenanceIdFallback === "string" && DASHBOARD_CONFIG.maintenanceIdFallback.trim()
+      ? DASHBOARD_CONFIG.maintenanceIdFallback.trim()
+      : null;
+  const activeMaintenanceId =
+    raw.activeMaintenanceId || raw.verification?.maintenance_id || fallbackMaintenanceId || null;
   const evidenceModel = buildEvidenceModel(raw, activeMaintenanceId, nextSelectedId);
   const nodesModel = buildNodesModel(raw, assetRows);
   const lstmOverviewModel = buildLstmOverviewModel(raw);

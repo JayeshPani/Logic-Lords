@@ -11,6 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/dashboard-static/styles.css" />
+    <script src="/dashboard-config.js"></script>
     <script type="module" src="/dashboard-static/main.js"></script>
     <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
   </head>
@@ -75,15 +76,20 @@
               <span class="label">Command Center:</span>
               <span class="value" id="command-center-value">METRO-NORTH_UNIT_04</span>
             </div>
-            <div class="weather-pill" aria-label="Weather Snapshot">
+            <div class="weather-pill" aria-label="Operational Snapshot">
               <div class="weather-item">
-                <iconify-icon icon="lucide:cloud-rain"></iconify-icon>
-                <span class="mono" id="weather-temp">24C / HUM 62%</span>
+                <iconify-icon icon="lucide:database"></iconify-icon>
+                <span class="mono" id="ops-data-source">SOURCE -</span>
               </div>
               <div class="divider"></div>
               <div class="weather-item">
-                <iconify-icon icon="lucide:wind"></iconify-icon>
-                <span class="mono" id="weather-wind">12KM/H NW</span>
+                <iconify-icon icon="lucide:clock-3"></iconify-icon>
+                <span class="mono" id="ops-last-sync">SYNC --:--:--</span>
+              </div>
+              <div class="divider"></div>
+              <div class="weather-item">
+                <iconify-icon icon="lucide:triangle-alert"></iconify-icon>
+                <span class="mono" id="ops-critical-assets">CRITICAL 0</span>
               </div>
             </div>
           </div>
@@ -106,15 +112,6 @@
 
         <p id="stale-badge" class="stale-badge" aria-live="polite"></p>
 
-        <div class="tabs-strip" role="tablist" aria-label="Dashboard Sections">
-          <button class="tab-trigger tab-trigger-pill tab-trigger-active" type="button" data-tab-target="overview" aria-selected="true">Overview</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="triage" aria-selected="false">Triage</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="asset" aria-selected="false">Asset Detail</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="ledger" aria-selected="false">Ledger</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="automation" aria-selected="false">Automation</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="map" aria-selected="false">City Map</button>
-          <button class="tab-trigger tab-trigger-pill" type="button" data-tab-target="maintenance" aria-selected="false">Maintenance</button>
-        </div>
         <div class="tab-panels">
           <section class="tab-panel tab-panel-active" id="tab-overview" data-tab-panel="overview" aria-label="Overview">
             <section class="ops-kpi-grid" id="ops-kpi-grid" aria-label="Operational KPIs">
@@ -554,6 +551,54 @@
         </div>
       </main>
     </div>
+
+    <button
+      id="assistant-chat-toggle"
+      class="assistant-chat-toggle"
+      type="button"
+      aria-label="Open InfraGuard Assistant"
+      aria-expanded="false"
+      aria-controls="assistant-chat-panel"
+    >
+      <iconify-icon icon="lucide:message-circle"></iconify-icon>
+      <span>Assistant</span>
+    </button>
+
+    <section id="assistant-chat-panel" class="assistant-chat-panel card-gradient" aria-label="InfraGuard Assistant" hidden>
+      <header class="assistant-chat-head">
+        <div>
+          <h3>InfraGuard Assistant</h3>
+          <p class="panel-subtitle">English + Hindi support | Module explanations</p>
+        </div>
+        <button id="assistant-chat-close-btn" class="icon-btn" type="button" aria-label="Close assistant">
+          <iconify-icon icon="lucide:x"></iconify-icon>
+        </button>
+      </header>
+
+      <div class="assistant-chat-controls">
+        <label class="assistant-chat-label" for="assistant-chat-language">Language</label>
+        <select id="assistant-chat-language" class="assistant-chat-select">
+          <option value="auto">Auto</option>
+          <option value="english">English</option>
+          <option value="hindi">Hindi</option>
+          <option value="bilingual">Bilingual</option>
+        </select>
+      </div>
+
+      <div id="assistant-chat-messages" class="assistant-chat-messages custom-scrollbar" aria-live="polite"></div>
+
+      <div class="assistant-chat-input-wrap">
+        <button id="assistant-chat-mic-btn" class="assistant-chat-mic-btn" type="button">Mic</button>
+        <textarea
+          id="assistant-chat-input"
+          class="assistant-chat-input"
+          rows="2"
+          maxlength="6000"
+          placeholder="Ask anything about InfraGuard modules, workflows, troubleshooting..."
+        ></textarea>
+        <button id="assistant-chat-send-btn" class="assistant-chat-send-btn" type="button">Send</button>
+      </div>
+    </section>
 
     <section id="account-modal" class="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title" hidden>
       <div class="account-modal-backdrop" data-account-close="true"></div>

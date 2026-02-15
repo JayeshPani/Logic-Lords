@@ -6,11 +6,13 @@ from datetime import datetime, timezone
 import json
 import logging
 import socket
+from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 from urllib import error as url_error
 from urllib import request as url_request
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import ValidationError
 from fastapi.responses import PlainTextResponse
 
@@ -18,6 +20,10 @@ from .config import get_settings
 from .errors import ApiError, build_meta
 from .observability import get_metrics, log_event
 from .schemas import (
+    AssistantChatRequest,
+    AssistantChatResponse,
+    AssistantChatResult,
+    AssistantTokenUsage,
     AssetListResponse,
     AssetTelemetry,
     AssetTelemetryResponse,
@@ -559,6 +565,406 @@ def _parse_evidence_item(raw: dict, trace_id: str) -> EvidenceItem:
         ) from exc
 
 
+def _direct_submit_verification(
+    *,
+    maintenance_id: str,
+    trace_id: str,
+    submitted_by: str,
+    operator_wallet_address: str | None,
+) -> VerificationSubmitResult:
+    """Fallback verification submit when orchestration workflow is missing.
+
+    This keeps the dashboard evidence workflow usable in local/demo mode:
+    - Uses report-generation to compute evidence hash and build on-chain command.
+    - Uses blockchain-verification-service to record the command (deterministic/live).
+    """
+
+    evidence_payload = _request_report_generation(
+        trace_id=trace_id,
+        method="GET",
+        path=f"/maintenance/{maintenance_id}/evidence",
+    )
+    raw_items = evidence_payload.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise ApiError(
+            status_code=409,
+            code="CONFLICT",
+            message="EVIDENCE_REQUIRED",
+            trace_id=trace_id,
+        )
+
+    asset_id: str | None = None
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        candidate = item.get("asset_id")
+        if isinstance(candidate, str) and candidate.strip():
+            asset_id = candidate.strip()
+            break
+    if asset_id is None:
+        raise ApiError(
+            status_code=409,
+            code="CONFLICT",
+            message="EVIDENCE_REQUIRED",
+            trace_id=trace_id,
+        )
+
+    now = datetime.now(tz=timezone.utc)
+    report_command = {
+        "command_id": str(uuid4()),
+        "command_type": "report.generate",
+        "command_version": "v1",
+        "requested_at": now.isoformat(),
+        "requested_by": submitted_by,
+        "trace_id": trace_id,
+        "correlation_id": f"maintenance:{maintenance_id}",
+        "payload": {
+            "maintenance_id": maintenance_id,
+            "asset_id": asset_id,
+            "report_type": "maintenance_verification",
+        },
+    }
+    report_response = _request_report_generation(
+        trace_id=trace_id,
+        method="POST",
+        path="/generate",
+        body={
+            "command": report_command,
+            "generated_at": now.isoformat(),
+        },
+    )
+
+    verification_command = report_response.get("verification_record_command")
+    if not isinstance(verification_command, dict):
+        raise ApiError(
+            status_code=502,
+            code="REPORT_GENERATION_BAD_RESPONSE",
+            message="Report generation response missing verification_record_command.",
+            trace_id=trace_id,
+        )
+
+    metadata = verification_command.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        metadata["submitted_by"] = submitted_by
+        if operator_wallet_address:
+            metadata["operator_wallet_address"] = operator_wallet_address.lower()
+
+    verification_response = _request_blockchain_verification(
+        trace_id=trace_id,
+        method="POST",
+        path="/record",
+        body=verification_command,
+    )
+    verification = verification_response.get("verification")
+    if not isinstance(verification, dict):
+        raise ApiError(
+            status_code=502,
+            code="BAD_RESPONSE",
+            message="Blockchain verification response missing verification payload.",
+            trace_id=trace_id,
+        )
+
+    status = str(verification.get("verification_status") or "submitted").lower()
+    if status not in {"pending", "submitted", "confirmed", "failed"}:
+        status = "submitted"
+
+    tx_hash = verification.get("tx_hash")
+    tx_hash_value = str(tx_hash) if tx_hash is not None else None
+    updated_at = verification.get("updated_at")
+    updated_at_value = updated_at if updated_at is not None else now
+    failure_reason = verification.get("failure_reason")
+
+    return VerificationSubmitResult(
+        workflow_id=f"wf_direct_{maintenance_id}",
+        maintenance_id=maintenance_id,
+        verification_status=status,  # type: ignore[arg-type]
+        verification_maintenance_id=str(verification.get("maintenance_id") or maintenance_id),
+        verification_tx_hash=tx_hash_value,
+        verification_error=str(failure_reason) if failure_reason is not None else None,
+        verification_updated_at=updated_at_value,  # type: ignore[arg-type]
+    )
+
+
+_ASSISTANT_MODULE_GUIDE = """
+InfraGuard module map:
+- apps/sensor-ingestion-service: Firebase telemetry read/normalize and computed engineering metrics.
+- apps/api-gateway: unified API boundary, auth/rate limit, service proxying, dashboard hosting.
+- apps/dashboard-web: operator UI (overview, triage, asset detail, map, automation, maintenance, ledger).
+- apps/orchestration-service: incident workflows, management notification, ACK handling, police escalation.
+- apps/notification-service: channel dispatch with retries and fallback.
+- services/lstm-forecast-service: failure probability forecasting.
+- services/anomaly-detection-service: anomaly scoring.
+- services/fuzzy-inference-service: fuzzy risk inference.
+- services/health-score-service: risk/health composition output.
+- services/report-generation-service: evidence hashing, report bundle generation, verification command creation.
+- services/blockchain-verification-service: verification lifecycle and Sepolia confirmation tracking.
+- contracts/: OpenAPI + command/event/data contracts.
+- firmware/esp32/firebase_dht11_mpu6050: ESP32 telemetry producer (DHT11 + accelerometer).
+- agents/openclaw-agent: automation workflow definitions.
+- data-platform/: storage/streaming/ml offline lifecycle.
+"""
+
+
+def _assistant_language_instructions(language_mode: str) -> str:
+    mode = (language_mode or "auto").strip().lower()
+    if mode == "english":
+        return "Respond in English only."
+    if mode == "hindi":
+        return "Respond in Hindi only (Devanagari script)."
+    if mode == "bilingual":
+        return "Respond bilingually with English first, then Hindi."
+    return (
+        "Auto language mode: detect user language and respond in that language. "
+        "If user asks for both languages, provide English and Hindi."
+    )
+
+
+def _offline_assistant_reply(*, body: AssistantChatRequest, reason: str) -> AssistantChatResult:
+    """Deterministic fallback when the Groq assistant cannot be used."""
+
+    def contains_devanagari(text: str) -> bool:
+        return any("\u0900" <= ch <= "\u097f" for ch in text)
+
+    requested = (body.language or "auto").strip().lower()
+    message = body.message.strip()
+    mode = requested
+    if mode == "auto":
+        mode = "hindi" if contains_devanagari(message) else "english"
+
+    module_map = _ASSISTANT_MODULE_GUIDE.strip()
+    hint_en = (
+        "Offline assistant mode (no LLM call). "
+        "To enable Groq, set `API_GATEWAY_ASSISTANT_GROQ_API_KEY` and restart `apps/api-gateway`."
+    )
+    hint_hi = (
+        "ऑफ़लाइन असिस्टेंट मोड (LLM कॉल नहीं हो रहा). "
+        "Groq चालू करने के लिए `API_GATEWAY_ASSISTANT_GROQ_API_KEY` सेट करें और `apps/api-gateway` रीस्टार्ट करें।"
+    )
+
+    english = "\n".join(
+        [
+            hint_en,
+            f"Reason: {reason}",
+            "",
+            "Quick module map:",
+            module_map,
+        ]
+    ).strip()
+
+    hindi = "\n".join(
+        [
+            hint_hi,
+            f"कारण: {reason}",
+            "",
+            "Module map:",
+            module_map,
+        ]
+    ).strip()
+
+    if mode == "hindi":
+        reply = hindi
+        language = "hindi"
+    elif mode == "bilingual":
+        reply = f"{english}\n\n---\n\n{hindi}"
+        language = "bilingual"
+    else:
+        reply = english
+        language = "english"
+
+    return AssistantChatResult(reply=reply, language=language, model="offline", usage=None)
+
+
+def _load_dotenv_value(*, key: str, search_roots: list[Path]) -> str | None:
+    """Best-effort .env reader (dev convenience).
+
+    We avoid adding runtime deps just for dotenv parsing. This is intentionally
+    simple and supports the common `KEY=value` form.
+    """
+
+    for root in search_roots:
+        candidate = root / ".env"
+        try:
+            text = candidate.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            if k.strip() != key:
+                continue
+            value = v.strip().strip("'").strip('"')
+            return value or None
+
+    return None
+
+
+def _assistant_api_key() -> str | None:
+    """Return Groq key from settings, or (dev-only) from .env without restart."""
+
+    configured = _settings.assistant_groq_api_key.strip()
+    if configured:
+        return configured
+
+    # Allow "edit .env and refresh" in local dev without restarting uvicorn.
+    # Search both repo root `.env` and `apps/api-gateway/.env`.
+    here = Path(__file__).resolve()
+    repo_root = here.parents[4]
+    gateway_root = here.parents[3]
+    return _load_dotenv_value(
+        key="API_GATEWAY_ASSISTANT_GROQ_API_KEY",
+        search_roots=[gateway_root, repo_root],
+    )
+
+
+def _request_assistant_reply(*, trace_id: str, body: AssistantChatRequest) -> AssistantChatResult:
+    if not _settings.assistant_enabled:
+        return _offline_assistant_reply(body=body, reason="assistant disabled in gateway settings")
+    api_key = _assistant_api_key()
+    if not api_key:
+        return _offline_assistant_reply(body=body, reason="missing API_GATEWAY_ASSISTANT_GROQ_API_KEY")
+
+    max_history = max(_settings.assistant_max_history_messages, 0)
+    history = body.history[-max_history:] if max_history else []
+    history_messages = [
+        {"role": item.role, "content": item.content.strip()}
+        for item in history
+        if item.content.strip()
+    ]
+
+    system_prompt = (
+        "You are InfraGuard Assistant for an urban infrastructure monitoring platform. "
+        "Answer operational questions clearly and practically. "
+        "Explain project modules when asked, using the module map provided below. "
+        "If unsure, explicitly say what is unknown and suggest what to check in the system. "
+        "Keep answers concise unless the user asks for detailed explanation.\n\n"
+        f"{_ASSISTANT_MODULE_GUIDE.strip()}\n\n"
+        f"{_assistant_language_instructions(body.language)}"
+    )
+
+    payload = {
+        "model": _settings.assistant_model,
+        "temperature": _settings.assistant_temperature,
+        "max_tokens": _settings.assistant_max_tokens,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            *history_messages,
+            {"role": "user", "content": body.message.strip()},
+        ],
+    }
+
+    request_payload = json.dumps(payload).encode("utf-8")
+    request = url_request.Request(
+        url=_settings.assistant_groq_base_url,
+        method="POST",
+        data=request_payload,
+        headers={
+            "authorization": f"Bearer {api_key}",
+            "content-type": "application/json",
+            "accept": "application/json",
+            "x-trace-id": trace_id,
+        },
+    )
+
+    timeout_seconds = max(_settings.assistant_timeout_seconds, 0.1)
+    try:
+        with url_request.urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8")
+    except url_error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="ignore")
+        if exc.code == 429:
+            raise ApiError(
+                status_code=429,
+                code="ASSISTANT_RATE_LIMITED",
+                message="Assistant provider rate limit reached. Retry shortly.",
+                trace_id=trace_id,
+            ) from exc
+        if exc.code in {401, 403}:
+            return _offline_assistant_reply(
+                body=body,
+                reason="assistant provider rejected credentials (check Groq API key)",
+            )
+        raise ApiError(
+            status_code=502,
+            code="ASSISTANT_PROVIDER_ERROR",
+            message=f"Assistant provider HTTP {exc.code}: {details[:180]}",
+            trace_id=trace_id,
+        ) from exc
+    except url_error.URLError as exc:
+        return _offline_assistant_reply(body=body, reason=f"assistant provider unreachable: {exc.reason}")
+    except (TimeoutError, socket.timeout) as exc:
+        return _offline_assistant_reply(body=body, reason=f"assistant provider timed out after {timeout_seconds:.1f}s")
+    except OSError as exc:
+        return _offline_assistant_reply(body=body, reason=f"assistant provider network error: {exc}")
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ApiError(
+            status_code=502,
+            code="ASSISTANT_BAD_RESPONSE",
+            message="Assistant provider returned invalid JSON.",
+            trace_id=trace_id,
+        ) from exc
+
+    if not isinstance(parsed, dict):
+        raise ApiError(
+            status_code=502,
+            code="ASSISTANT_BAD_RESPONSE",
+            message="Assistant provider returned unsupported payload shape.",
+            trace_id=trace_id,
+        )
+
+    choices = parsed.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ApiError(
+            status_code=502,
+            code="ASSISTANT_BAD_RESPONSE",
+            message="Assistant provider response missing choices.",
+            trace_id=trace_id,
+        )
+
+    choice0 = choices[0] if isinstance(choices[0], dict) else {}
+    message_payload = choice0.get("message") if isinstance(choice0, dict) else {}
+    content = ""
+    if isinstance(message_payload, dict):
+        raw_content = message_payload.get("content")
+        if isinstance(raw_content, str):
+            content = raw_content.strip()
+        elif isinstance(raw_content, list):
+            parts: list[str] = []
+            for item in raw_content:
+                if isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+            content = "\n".join(parts).strip()
+
+    if not content:
+        raise ApiError(
+            status_code=502,
+            code="ASSISTANT_BAD_RESPONSE",
+            message="Assistant provider returned empty content.",
+            trace_id=trace_id,
+        )
+
+    usage_payload = parsed.get("usage") if isinstance(parsed.get("usage"), dict) else {}
+    usage = AssistantTokenUsage(
+        prompt_tokens=usage_payload.get("prompt_tokens"),
+        completion_tokens=usage_payload.get("completion_tokens"),
+        total_tokens=usage_payload.get("total_tokens"),
+    )
+
+    return AssistantChatResult(
+        reply=content,
+        language=body.language,
+        model=str(parsed.get("model") or _settings.assistant_model),
+        usage=usage,
+    )
+
+
 @router.get("/health", response_model=HealthCheckResponse)
 def health(request: Request) -> HealthCheckResponse:
     trace_id = _trace_id(request)
@@ -830,6 +1236,107 @@ def create_maintenance_evidence_upload(
     )
 
 
+@router.put("/maintenance/{maintenance_id}/evidence/{evidence_id}/object")
+async def upload_maintenance_evidence_object(
+    maintenance_id: str,
+    evidence_id: str,
+    request: Request,
+    auth: Annotated[AuthContext, Depends(get_auth_context)],
+) -> Response:
+    """Proxy for local evidence uploads when Firebase Storage is not configured.
+
+    The dashboard uses this route when report-generation returns a relative
+    `upload_url` (same-origin), allowing uploads without CORS configuration.
+    """
+
+    trace_id = _trace_id(request)
+    enforce_rate_limit(request, auth)
+    require_roles(request, auth, "organization")
+    _with_metrics("/maintenance/{maintenance_id}/evidence/{evidence_id}/object")
+
+    payload = await request.body()
+    if not payload:
+        raise ApiError(
+            status_code=400,
+            code="BAD_REQUEST",
+            message="Evidence upload body is empty.",
+            trace_id=trace_id,
+        )
+
+    content_type = (request.headers.get("content-type") or "application/octet-stream").strip()
+    endpoint = (
+        f"{_settings.report_generation_base_url.rstrip('/')}"
+        f"/maintenance/{maintenance_id}/evidence/{evidence_id}/object"
+    )
+    timeout_seconds = max(_settings.report_generation_timeout_seconds, 0.1)
+    upstream_request = url_request.Request(
+        url=endpoint,
+        data=payload,
+        method="PUT",
+        headers={
+            "content-type": content_type,
+            "accept": "application/json",
+            "x-trace-id": trace_id,
+        },
+    )
+
+    try:
+        with url_request.urlopen(upstream_request, timeout=timeout_seconds) as response:
+            response.read()
+    except url_error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="ignore")
+        if exc.code == 404:
+            raise ApiError(
+                status_code=404,
+                code="NOT_FOUND",
+                message=details[:180] or "Requested evidence resource not found.",
+                trace_id=trace_id,
+            ) from exc
+        if exc.code == 409:
+            raise ApiError(
+                status_code=409,
+                code="CONFLICT",
+                message=details[:180] or "Evidence upload conflict.",
+                trace_id=trace_id,
+            ) from exc
+        if exc.code in {400, 401, 403}:
+            raise ApiError(
+                status_code=exc.code,
+                code="BAD_REQUEST" if exc.code == 400 else "FORBIDDEN",
+                message=details[:180] or f"Evidence upload failed with HTTP {exc.code}.",
+                trace_id=trace_id,
+            ) from exc
+        raise ApiError(
+            status_code=502,
+            code="REPORT_GENERATION_ERROR",
+            message=f"Report generation service HTTP {exc.code}: {details[:180]}",
+            trace_id=trace_id,
+        ) from exc
+    except url_error.URLError as exc:
+        raise ApiError(
+            status_code=503,
+            code="REPORT_GENERATION_UNAVAILABLE",
+            message=f"Report generation service unreachable: {exc.reason}",
+            trace_id=trace_id,
+        ) from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise ApiError(
+            status_code=504,
+            code="REPORT_GENERATION_TIMEOUT",
+            message=f"Report generation service timed out after {timeout_seconds:.1f}s.",
+            trace_id=trace_id,
+        ) from exc
+    except OSError as exc:
+        raise ApiError(
+            status_code=503,
+            code="REPORT_GENERATION_UNAVAILABLE",
+            message=f"Report generation network error: {exc}",
+            trace_id=trace_id,
+        ) from exc
+
+    return Response(status_code=204)
+
+
 @router.post(
     "/maintenance/{maintenance_id}/evidence/{evidence_id}/finalize",
     response_model=FinalizeEvidenceUploadResponse,
@@ -912,24 +1419,38 @@ def submit_maintenance_verification(
     require_roles(request, auth, "organization", "operator")
     _with_metrics("/maintenance/{maintenance_id}/verification/submit")
 
-    payload = _request_orchestration(
-        trace_id=trace_id,
-        method="POST",
-        path=f"/maintenance/{maintenance_id}/verification/submit",
-        body={
-            **body.model_dump(exclude_none=True),
-            "submitted_by": body.submitted_by or auth.subject,
-        },
-    )
+    submitted_by = body.submitted_by or auth.subject
+
     try:
-        result = VerificationSubmitResult.model_validate(payload)
-    except ValidationError as exc:
-        raise ApiError(
-            status_code=502,
-            code="ORCHESTRATION_BAD_RESPONSE",
-            message=f"Verification submit response validation failed: {exc.errors()}",
+        payload = _request_orchestration(
             trace_id=trace_id,
-        ) from exc
+            method="POST",
+            path=f"/maintenance/{maintenance_id}/verification/submit",
+            body={
+                **body.model_dump(exclude_none=True),
+                "submitted_by": submitted_by,
+            },
+        )
+        try:
+            result = VerificationSubmitResult.model_validate(payload)
+        except ValidationError as exc:
+            raise ApiError(
+                status_code=502,
+                code="ORCHESTRATION_BAD_RESPONSE",
+                message=f"Verification submit response validation failed: {exc.errors()}",
+                trace_id=trace_id,
+            ) from exc
+    except ApiError as exc:
+        # Local/demo fallback: if orchestration has no workflow for this maintenance_id,
+        # submit directly via report-generation + blockchain-verification-service.
+        if exc.status_code != 404:
+            raise
+        result = _direct_submit_verification(
+            maintenance_id=maintenance_id,
+            trace_id=trace_id,
+            submitted_by=submitted_by,
+            operator_wallet_address=body.operator_wallet_address,
+        )
 
     return VerificationSubmitResponse(data=result, meta=build_meta())
 
@@ -1138,3 +1659,24 @@ def get_lstm_realtime(
         asset_id=data.asset_id,
     )
     return LstmRealtimeResponse(data=data, meta=build_meta())
+
+
+@router.post("/assistant/chat", response_model=AssistantChatResponse)
+def assistant_chat(
+    request: Request,
+    body: AssistantChatRequest,
+    auth: Annotated[AuthContext, Depends(get_auth_context)],
+) -> AssistantChatResponse:
+    trace_id = _trace_id(request)
+    enforce_rate_limit(request, auth)
+    _with_metrics("/assistant/chat")
+
+    result = _request_assistant_reply(trace_id=trace_id, body=body)
+    log_event(
+        logger,
+        "gateway_assistant_chat",
+        trace_id=trace_id,
+        language=result.language,
+        model=result.model,
+    )
+    return AssistantChatResponse(data=result, meta=build_meta())

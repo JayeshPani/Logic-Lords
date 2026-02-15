@@ -83,6 +83,12 @@ class SepoliaRpcClient:
             raise SepoliaRpcError(f"rpc_http_error status={exc.code} body={details[:200]}") from exc
         except url_error.URLError as exc:
             raise SepoliaRpcError(f"rpc_unreachable reason={exc.reason}") from exc
+        except TimeoutError as exc:
+            raise SepoliaRpcError(
+                f"rpc_timeout after {self._timeout_seconds:.1f}s"
+            ) from exc
+        except OSError as exc:
+            raise SepoliaRpcError(f"rpc_io_error {exc}") from exc
 
         try:
             body = json.loads(response_body)

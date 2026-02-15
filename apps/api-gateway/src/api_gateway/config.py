@@ -30,8 +30,30 @@ class Settings(BaseSettings):
     report_generation_timeout_seconds: float = 15.0
     orchestration_base_url: str = "http://127.0.0.1:8200"
     orchestration_timeout_seconds: float = 8.0
+    assistant_enabled: bool = True
+    assistant_groq_api_key: str = ""
+    assistant_groq_base_url: str = "https://api.groq.com/openai/v1/chat/completions"
+    assistant_model: str = "llama-3.3-70b-versatile"
+    assistant_timeout_seconds: float = 30.0
+    assistant_max_history_messages: int = 8
+    assistant_temperature: float = 0.2
+    assistant_max_tokens: int = 600
 
-    model_config = SettingsConfigDict(env_prefix="API_GATEWAY_", extra="ignore")
+    # Optional dashboard defaults (served via /dashboard-config.js).
+    # This is for convenience in local/demo environments so the UI can auto-connect to RTDB.
+    dashboard_firebase_enabled: bool = False
+    dashboard_firebase_db_url: str = ""
+    dashboard_firebase_base_path: str = "infraguard/telemetry"
+
+    # Load from environment variables, plus (optionally) a local .env file.
+    # This allows "no-terminal" setup by putting secrets into apps/api-gateway/.env
+    # (which is gitignored by repo root .gitignore).
+    model_config = SettingsConfigDict(
+        env_prefix="API_GATEWAY_",
+        extra="ignore",
+        env_file=(".env", "../.env", "../../.env"),
+        env_file_encoding="utf-8",
+    )
 
     @property
     def auth_tokens(self) -> set[str]:

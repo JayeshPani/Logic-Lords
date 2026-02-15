@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 import logging
 import re
 from time import perf_counter
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 
 from .config import get_settings
@@ -30,6 +31,7 @@ from .storage_adapter import (
     EvidenceStorageError,
     EvidenceStorageUnavailable,
     FirebaseEvidenceStorageAdapter,
+    LocalEvidenceStorageAdapter,
 )
 from .store import InMemoryReportContextStore
 
@@ -40,7 +42,43 @@ _settings = get_settings()
 _store = InMemoryReportContextStore()
 _metrics = get_metrics()
 _engine = ReportGenerationEngine(settings=_settings, store=_store)
-_storage_adapter = FirebaseEvidenceStorageAdapter(settings=_settings)
+_firebase_storage_adapter = FirebaseEvidenceStorageAdapter(settings=_settings)
+_local_storage_adapter = LocalEvidenceStorageAdapter(settings=_settings)
+
+
+def _ensure_maintenance_context(*, maintenance_id: str, asset_id: str) -> MaintenanceCompletedEvent:
+    """Ensure maintenance context exists for evidence workflows.
+
+    In full deployments this context is ingested from orchestration events. For
+    local/demo environments, we auto-create a minimal context so evidence upload
+    can proceed.
+    """
+
+    existing = _store.get_maintenance(maintenance_id)
+    if existing is not None:
+        return existing
+
+    now = datetime.now(tz=timezone.utc)
+    created = MaintenanceCompletedEvent(
+        event_id=uuid4(),
+        event_type="maintenance.completed",
+        event_version="v1",
+        occurred_at=now,
+        produced_by=_settings.event_produced_by,
+        trace_id=uuid4().hex,
+        correlation_id=None,
+        tenant_id=None,
+        metadata={"source": "auto_context"},
+        data={
+            "maintenance_id": maintenance_id,
+            "asset_id": asset_id,
+            "completed_at": now,
+            "performed_by": "dashboard-operator",
+            "summary": "Auto-created maintenance context for evidence upload.",
+        },
+    )
+    _engine.ingest_maintenance_context(created)
+    return created
 
 
 def _sanitize_filename(filename: str) -> str:
@@ -109,9 +147,7 @@ def create_evidence_upload(
     maintenance_id: str,
     payload: CreateEvidenceUploadRequest,
 ) -> CreateEvidenceUploadResponse:
-    maintenance = _store.get_maintenance(maintenance_id)
-    if maintenance is None:
-        raise HTTPException(status_code=404, detail=f"maintenance context not found: {maintenance_id}")
+    maintenance = _ensure_maintenance_context(maintenance_id=maintenance_id, asset_id=payload.asset_id)
 
     if payload.asset_id != maintenance.data.asset_id:
         raise HTTPException(status_code=409, detail="asset_id does not match maintenance context.")
@@ -133,8 +169,9 @@ def create_evidence_upload(
     evidence_id = _store.next_evidence_id(now)
     object_path = _storage_path(maintenance_id, evidence_id, payload.filename)
 
+    adapter = _firebase_storage_adapter if _firebase_storage_adapter.available else _local_storage_adapter
     try:
-        session = _storage_adapter.create_upload_session(
+        session = adapter.create_upload_session(
             object_path=object_path,
             content_type=payload.content_type,
         )
@@ -192,8 +229,13 @@ def finalize_evidence_upload(
         raise HTTPException(status_code=404, detail="evidence storage path not found")
 
     try:
-        object_info = _storage_adapter.get_object_info(object_path=object_path)
-        sha256_hex = _storage_adapter.compute_sha256(object_path=object_path)
+        adapter = (
+            _firebase_storage_adapter
+            if stored.storage_uri.startswith("gs://") and _firebase_storage_adapter.available
+            else _local_storage_adapter
+        )
+        object_info = adapter.get_object_info(object_path=object_path)
+        sha256_hex = adapter.compute_sha256(object_path=object_path)
     except EvidenceObjectNotFound as exc:
         raise HTTPException(status_code=409, detail=f"UPLOAD_NOT_FOUND: {exc}") from exc
     except EvidenceStorageUnavailable as exc:
@@ -240,6 +282,46 @@ def list_evidence(maintenance_id: str) -> EvidenceListResponse:
         raise HTTPException(status_code=404, detail=f"maintenance context not found: {maintenance_id}")
 
     return EvidenceListResponse(items=_store.list_evidence(maintenance_id))
+
+
+@router.put("/maintenance/{maintenance_id}/evidence/{evidence_id}/object")
+async def upload_evidence_object(
+    maintenance_id: str,
+    evidence_id: str,
+    request: Request,
+) -> Response:
+    """Local upload endpoint used when Firebase Storage signed URLs are unavailable."""
+
+    if _store.is_evidence_locked(maintenance_id):
+        raise HTTPException(status_code=409, detail="VERIFICATION_LOCKED")
+
+    stored = _store.get_evidence(maintenance_id, evidence_id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="evidence record not found")
+
+    object_path = _store.get_evidence_storage_object_path(maintenance_id, evidence_id)
+    if not object_path:
+        raise HTTPException(status_code=404, detail="evidence storage path not found")
+
+    body = await request.body()
+    if len(body) > _settings.evidence_max_file_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"file too large; max allowed is {_settings.evidence_max_file_bytes} bytes.",
+        )
+
+    content_type = (request.headers.get("content-type") or stored.content_type or "application/octet-stream").strip()
+
+    try:
+        _local_storage_adapter.put_object(
+            object_path=object_path,
+            payload=body,
+            content_type=content_type,
+        )
+    except EvidenceStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return Response(status_code=204)
 
 
 @router.post(

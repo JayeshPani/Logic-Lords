@@ -476,3 +476,42 @@ class LstmRealtimeResponse(BaseModel):
 
     data: LstmRealtimeData
     meta: ApiMeta
+
+
+class AssistantChatMessage(BaseModel):
+    """Conversation message item sent by dashboard."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=6000)
+
+
+class AssistantChatRequest(BaseModel):
+    """Dashboard assistant chat request payload."""
+
+    message: str = Field(min_length=1, max_length=6000)
+    language: Literal["auto", "english", "hindi", "bilingual"] = "auto"
+    history: list[AssistantChatMessage] = Field(default_factory=list)
+
+
+class AssistantTokenUsage(BaseModel):
+    """Model token usage metadata."""
+
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+
+
+class AssistantChatResult(BaseModel):
+    """Assistant response payload."""
+
+    reply: str = Field(min_length=1)
+    language: Literal["auto", "english", "hindi", "bilingual"]
+    model: str = Field(min_length=1)
+    usage: AssistantTokenUsage | None = None
+
+
+class AssistantChatResponse(BaseModel):
+    """Assistant response wrapper."""
+
+    data: AssistantChatResult
+    meta: ApiMeta

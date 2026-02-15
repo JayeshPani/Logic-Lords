@@ -14,12 +14,28 @@ class DashboardApiError extends Error {
 }
 
 const FIREBASE_CONFIG_STORAGE_KEY = "infraguard.firebase.nodes.config.v1";
+const DASHBOARD_FIREBASE_DEFAULTS = DASHBOARD_CONFIG.firebase || {};
 const FIREBASE_DEFAULT_CONFIG = Object.freeze({
-  enabled: false,
-  dbUrl: "",
-  basePath: "infraguard/telemetry",
+  enabled: Boolean(DASHBOARD_FIREBASE_DEFAULTS.enabled),
+  dbUrl: normalizeFirebaseDbUrl(DASHBOARD_FIREBASE_DEFAULTS.dbUrl),
+  basePath: normalizeFirebaseBasePath(DASHBOARD_FIREBASE_DEFAULTS.basePath || "infraguard/telemetry"),
   authToken: "",
 });
+let telemetryBackoffUntilMs = 0;
+let gatewayRateLimitUntilMs = 0;
+let verificationEndpointBackoffUntilMs = 0;
+let evidenceEndpointBackoffUntilMs = 0;
+let lstmEndpointBackoffUntilMs = 0;
+let dashboardRefreshCycle = 0;
+
+const OPTIONAL_ENDPOINT_COOLDOWN_MS = 5 * 60 * 1000;
+const DEFAULT_GATEWAY_RETRY_MS = 60 * 1000;
+const TELEMETRY_UPSTREAM_COOLDOWN_MS = 5 * 60 * 1000;
+const HEALTH_REFRESH_EVERY_CYCLES = 2;
+const FORECAST_REFRESH_EVERY_CYCLES = 3;
+const TELEMETRY_REFRESH_EVERY_CYCLES = 3;
+const AUTOMATION_REFRESH_EVERY_CYCLES = 2;
+const LSTM_REFRESH_EVERY_CYCLES = 2;
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value ?? 0)));
@@ -364,9 +380,13 @@ async function fetchFirebaseNodesRuntime(config) {
   const endpoint = `${normalizedConfig.dbUrl}/${encodedPath}.json${params.toString() ? `?${params.toString()}` : ""}`;
 
   const controller = new AbortController();
+  const configuredTimeoutMs = Number(DASHBOARD_CONFIG.requestTimeoutMs);
+  const timeoutMs = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+    ? configuredTimeoutMs
+    : 10000;
   const timer = setTimeout(
     () => controller.abort(),
-    Math.max(DASHBOARD_CONFIG.requestTimeoutMs, DASHBOARD_CONFIG.firebaseRefreshIntervalMs),
+    timeoutMs,
   );
 
   try {
@@ -541,6 +561,9 @@ function classifyHttpCode(status) {
   if (status === 403) {
     return "FORBIDDEN";
   }
+  if (status === 429) {
+    return "TOO_MANY_REQUESTS";
+  }
   if (status === 404) {
     return "NOT_FOUND";
   }
@@ -618,6 +641,19 @@ async function parseResponseJsonSafely(response) {
   }
 }
 
+function parseRetryAfterMs(response) {
+  const raw = response.headers?.get("Retry-After");
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.round(seconds * 1000);
+  }
+  return DEFAULT_GATEWAY_RETRY_MS;
+}
+
+function secondsUntil(timestampMs) {
+  return Math.max(1, Math.ceil((timestampMs - Date.now()) / 1000));
+}
+
 async function fetchJson(path, { auth = true, method = "GET", body = undefined } = {}) {
   const endpoint = path;
   const controller = new AbortController();
@@ -644,6 +680,9 @@ async function fetchJson(path, { auth = true, method = "GET", body = undefined }
       const parsed = await parseResponseJsonSafely(response);
 
       const code = parsed?.error?.code || classifyHttpCode(response.status);
+      if (response.status === 429) {
+        gatewayRateLimitUntilMs = Date.now() + parseRetryAfterMs(response);
+      }
       if (parsed?.error?.message) {
         message = String(parsed.error.message);
       } else if (parsed?.detail) {
@@ -687,8 +726,7 @@ function cloneMockPayload(error = null) {
   const payload = JSON.parse(JSON.stringify(MOCK_DATA));
   const firebaseConfig = getFirebaseNodesConfig();
   payload.generatedAt = new Date().toISOString();
-  payload.activeMaintenanceId =
-    payload.activeMaintenanceId || payload.verification?.maintenance_id || DASHBOARD_CONFIG.maintenanceIdFallback;
+  payload.activeMaintenanceId = payload.activeMaintenanceId || payload.verification?.maintenance_id || null;
   payload.walletConnection = emptyWalletStatus();
   payload.verificationState = payload.verificationState || null;
   payload.evidenceByMaintenanceId = payload.evidenceByMaintenanceId || {};
@@ -710,11 +748,60 @@ function cloneMockPayload(error = null) {
 
 export async function loadDashboardData(previousPayload = null) {
   const firebaseConfig = getFirebaseNodesConfig();
+  if (Date.now() < gatewayRateLimitUntilMs) {
+    const waitSeconds = secondsUntil(gatewayRateLimitUntilMs);
+    const error = new DashboardApiError({
+      code: "TOO_MANY_REQUESTS",
+      message: `Gateway is rate-limiting requests. Retrying in ${waitSeconds}s.`,
+      endpoint: "/assets",
+      status: 429,
+    });
+
+    const firebaseState = await fetchFirebaseNodesRuntime(firebaseConfig);
+    if (previousPayload) {
+      return {
+        payload: mergeFirebaseIntoPayload(
+          {
+            ...previousPayload,
+            stale: true,
+            generatedAt: new Date().toISOString(),
+            error: {
+              code: error.code,
+              message: error.message,
+              endpoint: error.endpoint,
+            },
+          },
+          firebaseState,
+        ),
+        stale: true,
+      };
+    }
+
+    return {
+      payload: mergeFirebaseIntoPayload(cloneMockPayload(error), firebaseState),
+      stale: true,
+    };
+  }
+
+  dashboardRefreshCycle += 1;
+  const cycle = dashboardRefreshCycle;
+
   try {
-    const [gatewayHealth, assetsResponse] = await Promise.all([
-      fetchJson("/health", { auth: false }),
-      fetchJson("/assets", { auth: true }),
-    ]);
+    let gatewayHealth = previousPayload?.gatewayHealth || {
+      status: "degraded",
+      service: "api-gateway",
+      message: "Gateway health check deferred.",
+    };
+    const shouldRefreshGatewayHealth = cycle % HEALTH_REFRESH_EVERY_CYCLES === 1 || !previousPayload?.gatewayHealth;
+    if (shouldRefreshGatewayHealth) {
+      try {
+        gatewayHealth = await fetchJson("/health", { auth: false });
+      } catch (_error) {
+        gatewayHealth = previousPayload?.gatewayHealth || gatewayHealth;
+      }
+    }
+
+    const assetsResponse = await fetchJson("/assets", { auth: true });
 
     const assets = assetsResponse.data ?? [];
     if (!assets.length) {
@@ -728,40 +815,92 @@ export async function loadDashboardData(previousPayload = null) {
     const forecastByAsset = {};
     const sensorsByAsset = {};
 
-    await Promise.all(
-      assets.map(async (asset) => {
-        const healthResponse = await fetchJson(`/assets/${asset.asset_id}/health`, { auth: true });
-        const health = healthResponse.data;
-        healthByAsset[asset.asset_id] = health;
+    const refreshHealthThisCycle = cycle % HEALTH_REFRESH_EVERY_CYCLES === 1;
+    const refreshForecastThisCycle = cycle % FORECAST_REFRESH_EVERY_CYCLES === 1;
+    const refreshTelemetryThisCycle = cycle % TELEMETRY_REFRESH_EVERY_CYCLES === 1;
 
+    for (const asset of assets) {
+      const assetId = asset.asset_id;
+      const previousHealth = previousPayload?.healthByAsset?.[assetId] || null;
+      let health = previousHealth;
+
+      if (!health || refreshHealthThisCycle) {
         try {
-          const telemetryResponse = await fetchJson(`/telemetry/${asset.asset_id}/latest`, { auth: true });
-          const liveTelemetry = normalizeLiveSensorTelemetry(telemetryResponse?.data);
-          sensorsByAsset[asset.asset_id] = liveTelemetry || buildSensorTelemetry(health);
+          const healthResponse = await fetchJson(`/assets/${assetId}/health`, { auth: true });
+          health = healthResponse.data;
         } catch (_error) {
-          sensorsByAsset[asset.asset_id] = buildSensorTelemetry(health);
+          health = previousHealth;
         }
+      }
 
+      if (!health) {
+        health = {
+          asset_id: assetId,
+          evaluated_at: new Date().toISOString(),
+          health_score: 0.75,
+          risk_level: "Moderate",
+          failure_probability_72h: 0.4,
+          anomaly_flag: 0,
+          severity: "watch",
+          components: {
+            mechanical_stress: 0.4,
+            thermal_stress: 0.35,
+            fatigue: 0.35,
+            environmental_exposure: 0.3,
+          },
+        };
+      }
+      healthByAsset[assetId] = health;
+
+      const previousTelemetry = previousPayload?.sensorsByAsset?.[assetId] || null;
+      if (Date.now() >= telemetryBackoffUntilMs && refreshTelemetryThisCycle) {
         try {
-          const forecastResponse = await fetchJson(`/assets/${asset.asset_id}/forecast?horizon_hours=72`, { auth: true });
+          const telemetryResponse = await fetchJson(`/telemetry/${assetId}/latest`, { auth: true });
+          const liveTelemetry = normalizeLiveSensorTelemetry(telemetryResponse?.data);
+          sensorsByAsset[assetId] = liveTelemetry || buildSensorTelemetry(health);
+          telemetryBackoffUntilMs = 0;
+        } catch (error) {
+          if (["UPSTREAM_ERROR", "NETWORK_ERROR", "TIMEOUT", "TOO_MANY_REQUESTS"].includes(String(error?.code || ""))) {
+            telemetryBackoffUntilMs = Date.now() + TELEMETRY_UPSTREAM_COOLDOWN_MS;
+          }
+          sensorsByAsset[assetId] = previousTelemetry || buildSensorTelemetry(health);
+        }
+      } else {
+        sensorsByAsset[assetId] = previousTelemetry || buildSensorTelemetry(health);
+      }
+
+      const previousForecast = previousPayload?.forecastByAsset?.[assetId] || null;
+      if (!previousForecast || refreshForecastThisCycle) {
+        try {
+          const forecastResponse = await fetchJson(`/assets/${assetId}/forecast?horizon_hours=72`, { auth: true });
           const forecast = forecastResponse.data ?? {};
-          forecastByAsset[asset.asset_id] = {
+          forecastByAsset[assetId] = {
             ...forecast,
-            asset_id: asset.asset_id,
+            asset_id: assetId,
             points: normalizeForecastPoints(forecast),
           };
         } catch (_error) {
-          forecastByAsset[asset.asset_id] = buildSyntheticForecast(asset.asset_id, health);
+          forecastByAsset[assetId] = previousForecast || buildSyntheticForecast(assetId, health);
         }
-      }),
-    );
+      } else {
+        forecastByAsset[assetId] = previousForecast;
+      }
+    }
 
-    let automationIncidents = [];
-    try {
-      const incidentsResponse = await fetchJson("/automation/incidents", { auth: true });
-      automationIncidents = Array.isArray(incidentsResponse?.data) ? incidentsResponse.data : [];
-    } catch (_error) {
-      automationIncidents = [];
+    let automationIncidents = Array.isArray(previousPayload?.automationIncidents)
+      ? previousPayload.automationIncidents
+      : [];
+    const shouldRefreshAutomation =
+      cycle % AUTOMATION_REFRESH_EVERY_CYCLES === 1 || automationIncidents.length === 0;
+    if (shouldRefreshAutomation) {
+      try {
+        const incidentsResponse = await fetchJson("/automation/incidents", { auth: true });
+        automationIncidents = Array.isArray(incidentsResponse?.data) ? incidentsResponse.data : [];
+      } catch (_error) {
+        automationIncidents = Array.isArray(previousPayload?.automationIncidents)
+          ? previousPayload.automationIncidents
+          : [];
+      }
     }
 
     const incidentMaintenanceId =
@@ -769,31 +908,84 @@ export async function loadDashboardData(previousPayload = null) {
         (incident) =>
           typeof incident?.maintenance_id === "string" && incident.maintenance_id.trim().length > 0,
       )?.maintenance_id || null;
+    const previousLiveMaintenanceId =
+      previousPayload?.source === "live" && typeof previousPayload?.activeMaintenanceId === "string"
+        ? previousPayload.activeMaintenanceId
+        : null;
+    const fallbackMaintenanceId =
+      typeof DASHBOARD_CONFIG.maintenanceIdFallback === "string" && DASHBOARD_CONFIG.maintenanceIdFallback.trim()
+        ? DASHBOARD_CONFIG.maintenanceIdFallback.trim()
+        : null;
     const preferredMaintenanceId =
       incidentMaintenanceId ||
-      previousPayload?.verification?.maintenance_id ||
-      previousPayload?.activeMaintenanceId ||
+      previousLiveMaintenanceId ||
+      fallbackMaintenanceId ||
       null;
 
-    let verification = null;
-    if (preferredMaintenanceId) {
+    let verification =
+      previousPayload?.source === "live" &&
+      previousPayload?.verification &&
+      previousPayload?.verification?.maintenance_id === preferredMaintenanceId
+        ? previousPayload.verification
+        : null;
+    const shouldRefreshMaintenanceDetails = true;
+    if (
+      preferredMaintenanceId &&
+      Date.now() >= verificationEndpointBackoffUntilMs &&
+      shouldRefreshMaintenanceDetails
+    ) {
       try {
         const verificationResponse = await fetchJson(`/maintenance/${preferredMaintenanceId}/verification`, {
           auth: true,
         });
         verification = verificationResponse.data ?? null;
-      } catch (_error) {
-        verification = null;
+        verificationEndpointBackoffUntilMs = 0;
+      } catch (error) {
+        if (String(error?.code || "") === "NOT_FOUND") {
+          verificationEndpointBackoffUntilMs = Date.now() + OPTIONAL_ENDPOINT_COOLDOWN_MS;
+        } else if (String(error?.code || "") === "TOO_MANY_REQUESTS") {
+          verificationEndpointBackoffUntilMs = Math.max(
+            gatewayRateLimitUntilMs,
+            Date.now() + DEFAULT_GATEWAY_RETRY_MS,
+          );
+        }
+        verification =
+          previousPayload?.source === "live" &&
+          previousPayload?.verification &&
+          previousPayload?.verification?.maintenance_id === preferredMaintenanceId
+            ? previousPayload.verification
+            : null;
       }
     }
 
-    let evidenceItems = [];
-    if (preferredMaintenanceId) {
+    let evidenceItems =
+      preferredMaintenanceId &&
+      Array.isArray(previousPayload?.evidenceByMaintenanceId?.[preferredMaintenanceId])
+        ? previousPayload.evidenceByMaintenanceId[preferredMaintenanceId]
+        : [];
+    if (
+      preferredMaintenanceId &&
+      Date.now() >= evidenceEndpointBackoffUntilMs &&
+      shouldRefreshMaintenanceDetails
+    ) {
       try {
         const evidenceResponse = await fetchJson(`/maintenance/${preferredMaintenanceId}/evidence`, { auth: true });
         evidenceItems = Array.isArray(evidenceResponse?.data) ? evidenceResponse.data : [];
-      } catch (_error) {
-        evidenceItems = [];
+        evidenceEndpointBackoffUntilMs = 0;
+      } catch (error) {
+        if (String(error?.code || "") === "NOT_FOUND") {
+          evidenceEndpointBackoffUntilMs = Date.now() + OPTIONAL_ENDPOINT_COOLDOWN_MS;
+        } else if (String(error?.code || "") === "TOO_MANY_REQUESTS") {
+          evidenceEndpointBackoffUntilMs = Math.max(
+            gatewayRateLimitUntilMs,
+            Date.now() + DEFAULT_GATEWAY_RETRY_MS,
+          );
+        }
+        evidenceItems =
+          preferredMaintenanceId &&
+          Array.isArray(previousPayload?.evidenceByMaintenanceId?.[preferredMaintenanceId])
+            ? previousPayload.evidenceByMaintenanceId[preferredMaintenanceId]
+            : [];
       }
     }
 
@@ -814,12 +1006,24 @@ export async function loadDashboardData(previousPayload = null) {
         }
       : null;
 
-    let lstmRealtime = null;
-    try {
-      const lstmResponse = await fetchJson("/lstm/realtime", { auth: true });
-      lstmRealtime = lstmResponse.data ?? null;
-    } catch (_error) {
-      lstmRealtime = null;
+    let lstmRealtime = previousPayload?.lstmRealtime ?? null;
+    const shouldRefreshLstm = cycle % LSTM_REFRESH_EVERY_CYCLES === 1 || !lstmRealtime;
+    if (Date.now() >= lstmEndpointBackoffUntilMs && shouldRefreshLstm) {
+      try {
+        const lstmResponse = await fetchJson("/lstm/realtime", { auth: true });
+        lstmRealtime = lstmResponse.data ?? null;
+        lstmEndpointBackoffUntilMs = 0;
+      } catch (error) {
+        if (String(error?.code || "") === "NOT_FOUND") {
+          lstmEndpointBackoffUntilMs = Date.now() + OPTIONAL_ENDPOINT_COOLDOWN_MS;
+        } else if (String(error?.code || "") === "TOO_MANY_REQUESTS") {
+          lstmEndpointBackoffUntilMs = Math.max(
+            gatewayRateLimitUntilMs,
+            Date.now() + DEFAULT_GATEWAY_RETRY_MS,
+          );
+        }
+        lstmRealtime = previousPayload?.lstmRealtime ?? null;
+      }
     }
 
     const payload = {
@@ -991,6 +1195,38 @@ export async function submitVerification(maintenanceId, payload = {}) {
     auth: true,
     method: "POST",
     body: payload,
+  });
+  return response?.data || null;
+}
+
+export async function sendAssistantChat({ message, language = "auto", history = [] }) {
+  const text = String(message || "").trim();
+  if (!text) {
+    throw new DashboardApiError({
+      code: "ASSISTANT_EMPTY_MESSAGE",
+      message: "Type a question before sending.",
+      endpoint: "/assistant/chat",
+    });
+  }
+
+  const sanitizedHistory = Array.isArray(history)
+    ? history
+      .filter((item) => item && (item.role === "user" || item.role === "assistant"))
+      .map((item) => ({
+        role: item.role,
+        content: String(item.content || "").trim(),
+      }))
+      .filter((item) => item.content.length > 0)
+    : [];
+
+  const response = await fetchJson("/assistant/chat", {
+    auth: true,
+    method: "POST",
+    body: {
+      message: text,
+      language,
+      history: sanitizedHistory,
+    },
   });
   return response?.data || null;
 }
